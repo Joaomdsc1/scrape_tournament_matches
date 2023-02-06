@@ -52,6 +52,6 @@
             All other information is pretty self-explanatory.
 """
 
-from .homepage_paths import get_tournament_url_paths
+from .scrape.homepage_paths import get_tournament_url_paths
 
 __all__ = ["get_tournament_url_paths"]
