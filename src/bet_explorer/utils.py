@@ -1,5 +1,9 @@
+import time
+import random
+import logging
+import functools
 from datetime import datetime, timedelta
-from typing import Literal
+from typing import Literal, Callable, Any
 from urllib.parse import urljoin
 
 HOMEPAGE: Literal["https://www.betexplorer.com/"] = "https://www.betexplorer.com/"
@@ -13,20 +17,18 @@ CURRENT_YEAR: str = str(TODAY_DATETIME.year)
 
 
 def concatenate_homepage_url_to_path(path: str):
-
     """
-        Adds path to homepage domain (https://www.betexplorer.com/).
+    Adds path to homepage domain (https://www.betexplorer.com/).
     """
 
     return urljoin(HOMEPAGE, path)
 
 
 def get_sport(path: str) -> str:
-
     """
-        Returns what sport a path is for.
+    Returns what sport a path is for.
 
-        Paths are of the form /sport/country/name/
+    Paths are of the form /sport/country/name/
     """
     _, sport, *_ = path.split("/")
 
@@ -34,12 +36,33 @@ def get_sport(path: str) -> str:
 
 
 def get_tournament_name(path: str) -> str:
-
     """
-        Returns what tournament a path is for.
+    Returns what tournament a path is for.
 
-        Paths are of the form /sport/country/name/
+    Paths are of the form /sport/country/name/
     """
     *_, name, _ = path.split("/")
 
     return name
+
+
+def run_three_times(func: Callable[..., Any]) -> Callable[..., Any]:
+    """
+    Decorator for trying to run a function more than once.
+    """
+
+    @functools.wraps
+    def wrapper(*args, **kwargs):
+        for _ in range(3):
+            result = func(*args, **kwargs)
+
+            if result:  # if function's output is as expected
+                return result
+
+            time.sleep(random.uniform(6, 12))
+
+        logging.warning(f"No results even after attempting three times.")
+        logging.warning(f"args: {args}\n" + f"kwargs: {kwargs}")
+        return []
+
+    return wrapper
