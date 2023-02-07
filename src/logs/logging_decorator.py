@@ -21,7 +21,11 @@ def log(logging_func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             logging_func(f"Calling {func.__name__}")
+            logging_func(f"args: {args}")
+            logging_func(f"kwargs: {kwargs}")
+
             value = func(*args, **kwargs)
+
             logging_func(f"Finished {func.__name__}")
 
             return value
