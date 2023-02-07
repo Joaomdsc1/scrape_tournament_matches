@@ -1,5 +1,5 @@
 import pytest
-import bet_explorer.season_years as sea
+import bet_explorer.scrape.season_years as sea
 from bs4 import BeautifulSoup
 
 from .constant_variables import MOCK_PATH
