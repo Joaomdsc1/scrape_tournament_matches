@@ -3,7 +3,23 @@
     tournament matches information formatted correctly.
 
     -------
-    Data Format:
+    Scraped Data Format:
+
+        pd.DataFrame[
+            index=[],\n
+            columns=[
+                "id"   -> "{current_name}@/{sport}/{country}/{name-year}/"
+                "teams"               -> "{home} - {away}",\n
+                "result"              -> "{home score}:{away score}",\n
+                "date"                -> "{day}.{month}.{year}",\n
+                "odds home"           -> float,\n
+                "odds tie (optional)" -> float,\n
+                "odds away"           -> float,\n
+            ]
+        ]
+
+    -------
+    Formatted Data Format:
 
         Each {sport}.csv file should have the following data:
 
