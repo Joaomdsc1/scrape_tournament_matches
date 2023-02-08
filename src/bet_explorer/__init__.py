@@ -15,6 +15,7 @@
                 columns=[
                     "home"                -> str (home team name),\n
                     "away"                -> str (away team name),\n
+                    "result"              -> "{home score}:{away score}",\n
                     "winner"              -> Literal["h", "d", "a"]
                         "h" -> home\n
                         "d" -> draw\n
@@ -53,5 +54,6 @@
 """
 
 from . import scrape
+from . import format
 
-__all__ = ["scrape"]
+__all__ = ["scrape", "format"]
