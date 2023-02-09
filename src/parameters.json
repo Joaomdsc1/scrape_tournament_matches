@@ -1,0 +1,27 @@
+{
+    "should_scrape": false,
+    "should_format": false,
+    "url_paths": {
+        "mode": "file",
+        "list": [
+            "/soccer/england/premier-league/"
+        ],
+        "file": "./data/hyperlink_paths.json"
+    },
+    "sports": [
+        "basketball",
+        "soccer",
+        "handball",
+        "volleyball"
+    ],
+    "seasons": {
+        "first": [
+            "2011",
+            "2010-2011"
+        ],
+        "last": [
+            "2021",
+            "2020-2021"
+        ]
+    }
+}
