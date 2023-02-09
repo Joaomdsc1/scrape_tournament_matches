@@ -66,5 +66,6 @@ def get_tournament_url_paths(sports: set[str]) -> list[str]:
     bet_soup: BeautifulSoup = BeautifulSoup(bet_content, "html.parser")
 
     paths: list[str] = _get_tournament_url_paths_from_homepage(bet_soup, sports)
+    logging.info(f"{paths}")
 
     return paths

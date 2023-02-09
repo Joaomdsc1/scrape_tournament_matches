@@ -107,6 +107,8 @@ All default values are  defined inside `src/parameters.json`.
         
             Only useful if you don't have any paths at your disposal.
 
+            If you should this option, all scraped paths will be logged to `src/logs/web_scrape.log`.
+
     - **"list"**: list of url paths for "json_list" mode.
 
     - **"file"**: path for "file" mode.
