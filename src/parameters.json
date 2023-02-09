@@ -4,7 +4,8 @@
     "url_paths": {
         "mode": "file",
         "list": [
-            "/soccer/england/premier-league/"
+            "/soccer/england/premier-league/",
+            "/basketball/usa/nba/"
         ],
         "file": "../data/url_paths.json"
     },
