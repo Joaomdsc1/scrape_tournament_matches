@@ -59,6 +59,8 @@
             tournament matches has date number 0 (zero); the second date has date number
             1; so on and so forth.
 
+            Invalid games (cancelled or postponed for instance) have date number -1.
+
                 Example:
                     match_dates = [
                         "02.01.2014", "02.01.2014", "02.04.2014",

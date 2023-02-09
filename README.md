@@ -1,6 +1,9 @@
 # **ScrapeTournamentMatches**
 Repository for scraping tournament matches data.
 
+> **Note: It scrapes round-robin matches, rather than playoffs matches.**
+>> In order to change this behaviour, you have to modify the function `_get_main_seaction_query` inside `src/bet_explorer/scrape_matches.py`.
+
 ## **Getting Started**
 ---
 
