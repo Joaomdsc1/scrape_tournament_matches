@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Iterable
 
 import bet_explorer as bet
-from logs import log
 
 JsonKey = str
 JsonData = str | list[str] | dict[str, str | list[str]]
