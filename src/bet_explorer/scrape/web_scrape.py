@@ -1,6 +1,8 @@
+import logging
 from collections import defaultdict
 from pathlib import Path
 from typing import Optional
+from logs import log
 
 import pandas as pd
 
@@ -75,6 +77,7 @@ def _web_scrape_from_paths(
     return stm_right_columns
 
 
+@log(logging.info)
 def web_scrape_from_provided_paths(
     paths: list[str], first_season: tuple[str, str], last_season: tuple[str, str]
 ) -> dict[str, Matches]:
@@ -128,6 +131,7 @@ def web_scrape_from_provided_paths(
     return _web_scrape_from_paths(paths, first_season, last_season)
 
 
+@log(logging.info)
 def save_web_scraped_matches(
     sport_to_matches: dict[str, pd.DataFrame], directory_path: Path
 ) -> None:
