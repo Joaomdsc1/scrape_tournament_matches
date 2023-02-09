@@ -1,7 +1,6 @@
 import time
 import random
 import logging
-import functools
 from datetime import datetime, timedelta
 from typing import Literal, Callable, Any
 from urllib.parse import urljoin
@@ -51,7 +50,6 @@ def run_three_times(func: Callable[..., Any]) -> Callable[..., Any]:
     Decorator for trying to run a function more than once.
     """
 
-    @functools.wraps
     def wrapper(*args, **kwargs):
         for _ in range(3):
             result = func(*args, **kwargs)
@@ -64,5 +62,7 @@ def run_three_times(func: Callable[..., Any]) -> Callable[..., Any]:
         logging.warning(f"No results even after attempting three times.")
         logging.warning(f"args: {args}\n" + f"kwargs: {kwargs}")
         return []
+
+    wrapper.__name__ = func.__name__
 
     return wrapper
