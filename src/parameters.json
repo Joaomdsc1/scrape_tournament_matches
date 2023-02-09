@@ -6,7 +6,7 @@
         "list": [
             "/soccer/england/premier-league/"
         ],
-        "file": "./data/hyperlink_paths.json"
+        "file": "../data/url_paths.json"
     },
     "sports": [
         "basketball",
