@@ -1,9 +1,10 @@
-import re
 import logging
+import re
 from typing import Optional, Pattern, Union
 
 import requests
 from bs4 import BeautifulSoup, ResultSet, Tag
+
 from logs import log
 
 from ..utils import (

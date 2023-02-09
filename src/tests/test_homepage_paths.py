@@ -1,5 +1,6 @@
-import bet_explorer.scrape.homepage_paths as bet_home
 from bs4 import BeautifulSoup
+
+import bet_explorer.scrape.homepage_paths as bet_home
 
 from .constant_variables import MOCK_PATH
 

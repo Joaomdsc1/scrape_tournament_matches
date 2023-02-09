@@ -1,6 +1,5 @@
 import functools
-
-from typing import Callable, Any
+from typing import Any, Callable
 
 
 def log(logging_func: Callable[..., Any]) -> Callable[..., Any]:

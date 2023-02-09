@@ -1,5 +1,5 @@
-import config
 import bet_explorer as bet
+import config
 
 
 def main() -> None:

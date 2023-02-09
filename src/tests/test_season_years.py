@@ -1,6 +1,7 @@
 import pytest
-import bet_explorer.scrape.season_years as sea
 from bs4 import BeautifulSoup
+
+import bet_explorer.scrape.season_years as sea
 
 from .constant_variables import MOCK_PATH
 

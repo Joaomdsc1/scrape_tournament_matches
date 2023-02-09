@@ -1,8 +1,8 @@
-import time
-import random
 import logging
+import random
+import time
 from datetime import datetime, timedelta
-from typing import Literal, Callable, Any
+from typing import Any, Callable, Literal
 from urllib.parse import urljoin
 
 HOMEPAGE: Literal["https://www.betexplorer.com/"] = "https://www.betexplorer.com/"
@@ -59,7 +59,7 @@ def run_three_times(func: Callable[..., Any]) -> Callable[..., Any]:
 
             time.sleep(random.uniform(6, 12))
 
-        logging.warning(f"No results even after attempting three times.")
+        logging.warning("No results even after attempting three times.")
         logging.warning(f"args: {args}\n" + f"kwargs: {kwargs}")
         return []
 

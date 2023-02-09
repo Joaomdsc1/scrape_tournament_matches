@@ -69,7 +69,6 @@
             All other information is pretty self-explanatory.
 """
 
-from . import scrape
-from . import format
+from . import format, scrape
 
 __all__ = ["scrape", "format"]

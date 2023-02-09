@@ -1,9 +1,11 @@
-import requests
 import logging
+
+import requests
 from bs4 import BeautifulSoup, ResultSet, Tag
 
-from ..utils import HOMEPAGE, get_sport
 from logs import log
+
+from ..utils import HOMEPAGE, get_sport
 
 
 def _extract_hyperlink_paths_from_homepage(bet_soup: BeautifulSoup) -> ResultSet:

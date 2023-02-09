@@ -1,5 +1,6 @@
 import pandas as pd
 import pytest
+
 import bet_explorer.scrape.web_scrape as scrape
 
 

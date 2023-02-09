@@ -1,9 +1,10 @@
-import re
 import logging
+import re
 from typing import Optional, Pattern
 
 import requests
 from bs4 import BeautifulSoup, ResultSet, Tag
+
 from logs import log
 
 from ..utils import concatenate_homepage_url_to_path, run_three_times
