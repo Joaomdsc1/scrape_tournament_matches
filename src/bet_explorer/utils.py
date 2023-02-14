@@ -2,8 +2,11 @@ import logging
 import random
 import time
 from datetime import datetime, timedelta
-from typing import Any, Callable, Literal
+from typing import Callable, Literal, ParamSpec, TypeVar
 from urllib.parse import urljoin
+
+T = TypeVar("T")
+P = ParamSpec("P")
 
 HOMEPAGE: Literal["https://www.betexplorer.com/"] = "https://www.betexplorer.com/"
 
@@ -45,12 +48,12 @@ def get_tournament_name(path: str) -> str:
     return name
 
 
-def run_three_times(func: Callable[..., Any]) -> Callable[..., Any]:
+def run_three_times(func: Callable[P, T]) -> Callable[P, T]:
     """
     Decorator for trying to run a function more than once.
     """
 
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
         for _ in range(3):
             result = func(*args, **kwargs)
 

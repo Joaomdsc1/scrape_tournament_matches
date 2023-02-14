@@ -1,10 +1,13 @@
 import functools
-from typing import Any, Callable
+from typing import Any, Callable, ParamSpec, TypeVar
+
+T = TypeVar("T")
+P = ParamSpec("P")
 
 
-def log(logging_func: Callable[..., Any]) -> Callable[..., Any]:
+def log(logging_func: Callable[..., Any]) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """
-    Decorator for logging messages.
+    Returns a logging-decorator with given logging severity.
 
     -----
     Parameters:
@@ -14,11 +17,17 @@ def log(logging_func: Callable[..., Any]) -> Callable[..., Any]:
             Logging function with appropriate severity level.
 
             Examples: logging.info, logging.warning, ...
+
+    -----
+    Returns:
+
+        Callable
+            Logging-decorator with desired severity.
     """
 
-    def log_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
+    def log_wrapper(func: Callable[P, T]) -> Callable[P, T]:
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             logging_func(f"Calling {func.__name__}")
             logging_func(f"args: {args}")
             logging_func(f"kwargs: {kwargs}")
