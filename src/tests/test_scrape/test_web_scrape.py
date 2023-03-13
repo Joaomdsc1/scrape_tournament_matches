@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-import bet_explorer.scrape.web_scrape as scrape
+import tournament_matches.scrape.web_scrape as scrape
 
 
 @pytest.fixture

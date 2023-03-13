@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from typing import Iterable
 
-import bet_explorer as bet
+import tournament_matches as bet
 
 JsonKey = str
 JsonData = str | list[str] | dict[str, str | list[str]]

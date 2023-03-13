@@ -1,6 +1,6 @@
 import pandas as pd
 
-import bet_explorer.metadata.number_of_matches as dnm
+import tournament_matches.metadata.number_of_matches as dnm
 
 
 def test_get_number_of_matches_per_sport():

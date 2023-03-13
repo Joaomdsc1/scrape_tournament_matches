@@ -1,8 +1,8 @@
 from functools import partial
 
-import bet_explorer as bet
 import config
-from bet_explorer.filter import filter_functions as ff
+import tournament_matches as bet
+from tournament_matches.filter import filter_functions as ff
 
 FILTERING_FUNCTIONS = [
     partial(ff.by_num_matches, min=50, max=float("inf")),

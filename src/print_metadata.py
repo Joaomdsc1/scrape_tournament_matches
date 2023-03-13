@@ -1,7 +1,7 @@
 import pandas as pd
 
-import bet_explorer.metadata as md
 import config
+import tournament_matches.metadata as md
 
 
 def print_metadata() -> None:

@@ -1,6 +1,6 @@
 import pandas as pd
 
-import bet_explorer.metadata.unique_seasons as dus
+import tournament_matches.metadata.unique_seasons as dus
 
 
 def test_get_unique_season_names_per_sport():

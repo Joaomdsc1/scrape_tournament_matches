@@ -1,4 +1,4 @@
-import bet_explorer.filter.utils as utils
+import tournament_matches.filter.utils as utils
 
 
 def test_get_sets_intersection_trivial():

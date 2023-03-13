@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-import bet_explorer.format.format_scraped_data as fmt
+import tournament_matches.format.format_scraped_data as fmt
 
 
 def test_remove_suffixes():

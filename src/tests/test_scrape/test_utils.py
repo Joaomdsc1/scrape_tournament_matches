@@ -1,4 +1,4 @@
-import bet_explorer.scrape.utils as utils
+import tournament_matches.scrape.utils as utils
 
 
 def test_concatenate_homepage_to_url():

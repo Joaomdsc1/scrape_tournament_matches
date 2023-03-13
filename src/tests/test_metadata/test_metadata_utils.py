@@ -1,4 +1,4 @@
-import bet_explorer.metadata.utils as utils
+import tournament_matches.metadata.utils as utils
 
 
 def test_flatten_dict_of_lists():

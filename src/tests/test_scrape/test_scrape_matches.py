@@ -1,7 +1,7 @@
 import pytest
 from bs4 import BeautifulSoup
 
-import bet_explorer.scrape.scrape_matches as scp
+import tournament_matches.scrape.scrape_matches as scp
 
 from .constant_variables import MOCK_PATH
 

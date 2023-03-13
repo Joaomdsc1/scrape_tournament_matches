@@ -1,4 +1,4 @@
-import bet_explorer.metadata.country_names as dcn
+import tournament_matches.metadata.country_names as dcn
 
 
 def test_get_country_name():

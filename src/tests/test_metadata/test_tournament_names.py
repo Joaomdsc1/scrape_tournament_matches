@@ -1,4 +1,4 @@
-import bet_explorer.metadata.tournament_names as dtn
+import tournament_matches.metadata.tournament_names as dtn
 
 
 def test_get_no_season_tournament_name_one_id():

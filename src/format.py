@@ -1,5 +1,5 @@
-import bet_explorer as bet
 import config
+import tournament_matches as bet
 
 
 def format() -> None:

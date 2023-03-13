@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-import bet_explorer.filter.filter as ftr
+import tournament_matches.filter.filter as ftr
 
 
 @pytest.fixture
