@@ -1,4 +1,4 @@
-# **ScrapeTournamentMatches**
+# **Scrape Tournament Matches**
 Repository for scraping tournament matches data.
 
 > **Note: It scrapes round-robin matches, rather than playoffs matches.**
@@ -59,9 +59,10 @@ All that is needed is:
 
     ```
     $ cd src
-    $ python3 scrape.py  # scraping matches
-    $ python3 format.py  # formatting matches
-    $ python3 filter.py  # filter matches
+    $ python3 scrape.py          # scraping matches
+    $ python3 format.py          # formatting matches
+    $ python3 filter.py          # filter matches
+    $ python3 print_metadata.py  # metadata
     ```
 
 <br>
@@ -74,16 +75,17 @@ For information about what data will be scraped and saved you can read:
 - `format`: Read `src.bet_explorer.scrape.save_formatted_web_scraped_all_sports` documentation.
 - `filter`: Same format as `format`.
 
-## **Configuration**
+## **Logs**
 ---
 
 By default, everything is logged to `logs/`. 
 
 Severity level can be changed in `src/logs/logs.py`.
 
-### **Parameters**
+## **Parameters**
+---
 
-**Scrape Parameters**
+### **Scrape Parameters**
 
 All default values are defined inside `src/scrape.json`. 
 
@@ -133,18 +135,18 @@ All default values are defined inside `src/scrape.json`.
 
     **Note**: All seasons between "first_season" and "last_season" will be scraped.
 
-**Format Parameters**
+### **Format Parameters**
 
 The only required parameter is what sports should be formatted.
 
-By default it takes them from `src/scrape.json`. But you can also write them directly into `format.py`.
+By default it takes them from `src/scrape.json`. But you can also write them directly into `src/format.py`.
 
 
-**Filter Parameters**
+### **Filter Parameters**
 
 The only required parameter is what sports should be filtered.
 
-By default it takes them from `src/scrape.json`. But you can also write them directly into `format.py`.
+By default it takes them from `src/scrape.json`. But you can also write them directly into `src/filter.py`.
 
 Optional parameters which can be changed in `src/filter.py`:
 - Whether invalid matches should be removed: 
@@ -159,6 +161,18 @@ Optional parameters which can be changed in `src/filter.py`:
     - Add to `src.bet_explorer.filter.filter_functions`.
     - Add/remove from `src/filter.py` filtering function list: `FILTERING_FUNCTIONS`.
 
+### **Metadata Parameters**
+
+The only required parameter is what sports should be formatted.
+
+By default it takes them from `src/scrape.json`. But you can also write them directly into `src/print_metadata.py`.
+
+All information is printed to command line:
+- Number of matches playing for each sport
+- Number of seasons considered for each sport
+- Number of tournaments considered for each sport
+- Number of tournaments with each possible number of seasons
+- Total number of countries where tournaments were played in
 
 <br>
 
