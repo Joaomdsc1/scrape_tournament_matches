@@ -153,6 +153,8 @@ Optional parameters which can be changed in `src/filter.py`:
         - **"before"**: Filter them 'before' applying filtering functions
         - **"after"**: Filter them 'after' applying filtering functions
         - **Any other value**: same as "no".
+
+        **Default**: "before".
 - Add/Remove new functions to filter tournaments: 
     - Add to `src.bet_explorer.filter.filter_functions`.
     - Add/remove from `src/filter.py` filtering function list: `FILTERING_FUNCTIONS`.
