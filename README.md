@@ -63,10 +63,18 @@ All that is needed is:
 
     ```
     $ cd src
-    $ python3 main.py
+    $ python3 scrape.py  # scraping matches
+    $ python3 format.py  # formatting matches
     ```
 
 <br>
+
+## **Formats**
+---
+For information about what data will be scraped and saved you can read:
+
+- `scrape`: Read `src.bet_explorer.scrape.save_web_scraped_matches` documentation.
+- `format`: Read `src.bet_explorer.scrape.save_formatted_web_scraped_all_sports` documentation.
 
 ## **Configuration**
 ---
@@ -77,18 +85,11 @@ Severity level can be changed in `src/logs/logs.py`.
 
 ### **Parameters**
 
-All default values are  defined inside `src/parameters.json`. 
+**Scrape Parameters**
 
-- **"should_scrape"**: Whether or not data should be scraped.
+All default values are defined inside `src/scrape.json`. 
 
-    - By default data will be saved to `data/bet_explorer/{sport}.csv`.
-    - See `src/bet_explorer/__init__.py` for details about the output.
-
-
-- **"should_format"**: Whether or not data should be formatted. 
-
-    - By default data will be saved to `data/formatted/{sport}.csv`
-    - See `src/bet_explorer/__init__.py` for details about the output.
+- **"sports"**: List of desired sports.
 
 - **"url_paths"**:  Which `betexplorer.com` webpage paths to use. 
 
@@ -116,8 +117,6 @@ All default values are  defined inside `src/parameters.json`.
 
     - **"file"**: path for "file" mode.
 
-- **"sports"**: List of desired sports.
-
 - **"seasons"**: Which tournament seasons we should scrape.
 
     - **"first"**: List with first seasons to be considered for all tournaments. 
@@ -135,6 +134,15 @@ All default values are  defined inside `src/parameters.json`.
         - It should have the same kind of entries as "first_season".
 
     **Note**: All seasons between "first_season" and "last_season" will be scraped.
+
+**Format Parameters**
+
+The only required parameter is what sports should
+be formatted.
+
+By default it takes them from `scrape.json`. 
+
+But you can also write them directly into `format.py`.
 
 <br>
 

@@ -1,6 +1,10 @@
 {
-    "should_scrape": false,
-    "should_format": false,
+    "sports": [
+        "basketball",
+        "soccer",
+        "handball",
+        "volleyball"
+    ],
     "url_paths": {
         "mode": "file",
         "list": [
@@ -9,12 +13,6 @@
         ],
         "file": "../data/url_paths.json"
     },
-    "sports": [
-        "basketball",
-        "soccer",
-        "handball",
-        "volleyball"
-    ],
     "seasons": {
         "first": [
             "2011",
