@@ -42,12 +42,6 @@ Installing all required packages:
 $ python3 -m pip install -r requirements.txt
 ```
 
-**Remark**: This project has been developed entirely with a conda environment. It should still work with pip since `requirements.txt` was created automatically:
-
-```
-$ pip list --format=freeze > requirements.txt
-```
-
 <br>
 
 ## **How to Run**
@@ -55,7 +49,9 @@ $ pip list --format=freeze > requirements.txt
 
 All that is needed is:
 
-- Setup the configuration file `src/parameters.json`.
+- Setup configuration parameters:
+    - Setup `src/scrape.json`.
+    - Setup parameters in whatever `src/<...>.py` you want to run.
 
     See [Parameters](#parameters) for more details.
 
@@ -65,6 +61,7 @@ All that is needed is:
     $ cd src
     $ python3 scrape.py  # scraping matches
     $ python3 format.py  # formatting matches
+    $ python3 filter.py  # filter matches
     ```
 
 <br>
@@ -75,6 +72,7 @@ For information about what data will be scraped and saved you can read:
 
 - `scrape`: Read `src.bet_explorer.scrape.save_web_scraped_matches` documentation.
 - `format`: Read `src.bet_explorer.scrape.save_formatted_web_scraped_all_sports` documentation.
+- `filter`: Same format as `format`.
 
 ## **Configuration**
 ---
@@ -137,12 +135,28 @@ All default values are defined inside `src/scrape.json`.
 
 **Format Parameters**
 
-The only required parameter is what sports should
-be formatted.
+The only required parameter is what sports should be formatted.
 
-By default it takes them from `scrape.json`. 
+By default it takes them from `src/scrape.json`. But you can also write them directly into `format.py`.
 
-But you can also write them directly into `format.py`.
+
+**Filter Parameters**
+
+The only required parameter is what sports should be filtered.
+
+By default it takes them from `src/scrape.json`. But you can also write them directly into `format.py`.
+
+Optional parameters which can be changed in `src/filter.py`:
+- Whether invalid matches should be removed: 
+    - `filter_matches: Literal['no', 'before', 'after']` parameter in `bet.filter.filter_and_save_tournaments_all_sports` function call.
+        - **"no"**: Do not filter them out.
+        - **"before"**: Filter them 'before' applying filtering functions
+        - **"after"**: Filter them 'after' applying filtering functions
+        - **Any other value**: same as "no".
+- Add/Remove new functions to filter tournaments: 
+    - Add to `src.bet_explorer.filter.filter_functions`.
+    - Add/remove from `src/filter.py` filtering function list: `FILTERING_FUNCTIONS`.
+
 
 <br>
 

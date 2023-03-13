@@ -71,6 +71,6 @@
             All other information is pretty self-explanatory.
 """
 
-from . import format, scrape
+from . import filter, format, scrape
 
-__all__ = ["scrape", "format"]
+__all__ = ["filter", "format", "scrape"]
