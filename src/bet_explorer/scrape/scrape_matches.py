@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup, ResultSet, Tag
 
 from logs import log
 
-from ..utils import (
+from .utils import (
     CURRENT_YEAR,
     TODAY,
     YESTERDAY,

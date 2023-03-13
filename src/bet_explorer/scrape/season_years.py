@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup, ResultSet, Tag
 
 from logs import log
 
-from ..utils import concatenate_homepage_url_to_path, run_three_times
+from .utils import concatenate_homepage_url_to_path, run_three_times
 
 
 def _create_default_path_with_year(season: Tag):

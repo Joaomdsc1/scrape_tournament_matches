@@ -7,9 +7,9 @@ import pandas as pd
 
 from logs import log
 
-from ..utils import get_sport, get_tournament_name
 from .scrape_matches import Matches, web_scrape_matches_information
 from .season_years import get_path_to_desired_seasons
+from .utils import get_sport, get_tournament_name
 
 
 def _create_tournament_id(name: str, season_path: str) -> str:
