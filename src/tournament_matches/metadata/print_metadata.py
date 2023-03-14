@@ -33,7 +33,7 @@ def print_number_tournament_names(
     print("Number of Tournament Names")
 
     for sport, unique_seasons in sport_to_unique_tourneys.items():
-        print(f"{sport.title()}: {len(unique_seasons)}")
+        print(f"{sport.title():<15} {len(unique_seasons)}")
 
     all = tn.get_all_unique_tournaments(sport_to_unique_tourneys)
     print(f"{'Total':<15} {len(all)}", end="\n\n")
@@ -44,10 +44,13 @@ def print_num_tournaments_with_n_seasons(all_no_seasons: list[str]) -> None:
     print("Number of Tournaments with 'n' Seasons")
 
     counter = tn.get_count_with_each_amount_of_seasons(all_no_seasons)
+    sorted_items = sorted(counter.items(), key=lambda item: item[0])
 
     print(f"{'#Seasons':<15} {'#Tournaments'}")
-    for key, count in counter.items():
-        print(f"{key:<15} {count}", end="\n\n")
+    for key, count in sorted_items:
+        print(f"{key:<15} {count}")
+
+    print()
 
 
 def print_num_countries(all_no_seasons: list[str]) -> None:
