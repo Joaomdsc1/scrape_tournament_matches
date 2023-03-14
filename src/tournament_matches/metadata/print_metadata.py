@@ -30,7 +30,7 @@ def print_number_tournament_names(
     sport_to_unique_tourneys: dict[str, list[str]]
 ) -> None:
 
-    print("Number of Tournament Names")
+    print("Number of Unique Tournament")
 
     for sport, unique_seasons in sport_to_unique_tourneys.items():
         print(f"{sport.title():<15} {len(unique_seasons)}")
