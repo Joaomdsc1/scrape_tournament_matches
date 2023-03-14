@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from typing import Iterable
 
-import tournament_matches as bet
+import tournament_matches as tm
 
 JsonKey = str
 JsonData = str | list[str] | dict[str, str | list[str]]
@@ -25,7 +25,7 @@ def get_url_paths(url_paths_config: ConfigurationType, sports: Iterable[str]):
     mode: str = url_paths_config["mode"]
 
     if mode == "homepage":
-        return bet.scrape.get_tournament_url_paths(set(sports))
+        return tm.scrape.get_tournament_url_paths(set(sports))
 
     if mode == "json_list":
         return url_paths_config["list"]

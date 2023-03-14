@@ -1,7 +1,7 @@
 from functools import partial
 
 import config
-import tournament_matches as bet
+import tournament_matches as tm
 from tournament_matches.filter import filter_functions as ff
 
 FILTERING_FUNCTIONS = [
@@ -19,7 +19,7 @@ def filter() -> None:
     filter_dir = config.path.FILTER_PATH
     filter_dir.mkdir(exist_ok=True, parents=True)
 
-    bet.filter.filter_and_save_tournaments_all_sports(
+    tm.filter.filter_and_save_tournaments_all_sports(
         sports,
         format_dir,
         filter_dir,
