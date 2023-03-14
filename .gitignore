@@ -1,7 +1,5 @@
 .vscode
-
-data/bet_explorer/
-data/formatted/
+data/*/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
