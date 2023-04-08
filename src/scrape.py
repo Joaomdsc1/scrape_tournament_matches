@@ -10,8 +10,12 @@ def scrape() -> None:
     scrape_dir = config.path.SCRAPE_PATH
     scrape_dir.mkdir(exist_ok=True, parents=True)
 
-    paths = config.parser.get_url_paths(params["url_paths"], sports)
+    paths_params = params["url_paths"]
+    paths = config.parser.get_url_paths(paths_params, sports)
     unique_paths = sorted(set(paths))
+
+    if paths_params["validate"]:
+        tm.scrape.validate_url_paths(unique_paths)
 
     sport_to_matches = tm.scrape.web_scrape_from_provided_paths(
         unique_paths,

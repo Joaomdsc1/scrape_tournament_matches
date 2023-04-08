@@ -93,9 +93,14 @@ All default values are defined inside `src/scrape.json`.
 
 - **"url_paths"**:  Which `betexplorer.com` webpage paths to use. 
 
-    They are of the form "{sport}/{country}/{tournament-name}".
+    They are of the form "/{sport}/{country}/{tournament-name}/".
 
     - **"mode"**: There are three possible modes for this.
+
+        - **"validate"**: If `true`, it will validate paths from `src/parameters.json`.
+
+            Specifically, it will raise an error if any path is not valid (Not Found).
+            Paths may become invalid if tournaments have their names changed.
 
         - **"file"**: It will take paths from the "file" provided in `src/parameters.json`. 
 

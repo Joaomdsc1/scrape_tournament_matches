@@ -6,6 +6,7 @@
         "volleyball"
     ],
     "url_paths": {
+        "validate": true,
         "mode": "file",
         "list": [
             "/soccer/england/premier-league/",
