@@ -67,6 +67,11 @@ All that is needed is:
 
 <br>
 
+## **Backup**
+- Data for seasons between 2011 and 2021 can be found in `data/real_matches.zip`.
+    - It has already been fully parsed, that is, filtered and formatted.
+    - See [Parameters](#parameters) for more information about what it means.
+
 ## **Formats**
 ---
 For information about what data will be scraped and saved you can read:
