@@ -1,5 +1,5 @@
 beautifulsoup4==4.11.1
-black==22.6.0
+black==24.3.0
 flake8==4.0.1
 isort==5.9.3
 numpy==1.23.5
