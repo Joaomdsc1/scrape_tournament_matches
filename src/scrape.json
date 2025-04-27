@@ -1,16 +1,16 @@
 {
     "sports": [
         "basketball",
-        "soccer",
-        "handball",
-        "volleyball"
+        "football"
     ],
     "url_paths": {
         "validate": true,
         "mode": "file",
         "list": [
-            "/soccer/england/premier-league/",
-            "/basketball/usa/nba/"
+            "/basketball/brazil/nbb/",
+            "/basketball/usa/nba/",
+            "/football/brazil/serie-a-betano/",
+            "/football/germany/bundesliga/"
         ],
         "file": "../data/url_paths.json"
     },
