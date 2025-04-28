@@ -1,15 +1,13 @@
 {
     "sports": [
-        "basketball",
         "football"
     ],
     "url_paths": {
         "validate": true,
         "mode": "file",
         "list": [
-            "/basketball/brazil/nbb/",
-            "/basketball/usa/nba/",
             "/football/brazil/serie-a-betano/",
+            "/football/brazil/serie-b-superbet/",
             "/football/germany/bundesliga/"
         ],
         "file": "../data/url_paths.json"
