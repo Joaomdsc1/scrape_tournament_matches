@@ -45,6 +45,8 @@ if campeonato_escolhido:
 
     if not partidas_filtradas.empty:
         st.write("Partidas relacionadas ao campeonato escolhido:")
+        colunas_ordem = ['home','away','result','date','odds home','odds tie','odds away'] + [col for col in partidas_filtradas.columns if col not in ['home','away','result','date','odds home','odds tie','odds away']]
+        partidas_filtradas = partidas_filtradas[colunas_ordem]
         st.dataframe(partidas_filtradas)
     else:
         st.warning("Nenhuma partida encontrada para o campeonato selecionado.")
