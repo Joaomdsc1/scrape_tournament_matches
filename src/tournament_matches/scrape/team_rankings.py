@@ -56,13 +56,13 @@ def save_team_rankings(rankings, scrape_dir):
 # Exemplo de uso (caso o script seja executado diretamente)
 if __name__ == "__main__":
     urls_file = "../data/url_paths.json"
-    scrape_dir = "./rankings"
+    scrape_dir = "../data/rankings"
     
     # Carregar URLs
     urls = load_urls(urls_file)
     
     # Exemplo de esportes (garanta que esses nomes correspondam aos esportes que você deseja)
-    sports = ["football", "germany", "brazil"]  # Ajuste conforme necessário
+    sports = ["football"]  # Ajuste conforme necessário
     
     # Filtrar URLs apenas para os esportes presentes
     valid_urls = {sport: urls[sport] for sport in sports if sport in urls}

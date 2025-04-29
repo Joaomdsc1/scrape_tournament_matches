@@ -50,3 +50,4 @@ if campeonato_escolhido:
         st.dataframe(partidas_filtradas)
     else:
         st.warning("Nenhuma partida encontrada para o campeonato selecionado.")
+
