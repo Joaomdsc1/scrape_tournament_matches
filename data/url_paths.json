@@ -2,6 +2,10 @@
     "paths": [
         "/football/brazil/serie-a-betano/",
         "/football/germany/bundesliga/",
-        "/football/brazil/serie-b-superbet/"
+        "/football/brazil/serie-b-superbet/",
+        "/football/england/premier-league/",
+        "/football/italy/serie-a/",
+        "/basketball/usa/nba/",
+        "/basketball/brazil/nbb/"
     ]
 }
