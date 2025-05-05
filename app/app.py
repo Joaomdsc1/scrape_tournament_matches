@@ -1,42 +1,35 @@
 import streamlit as st
 import pandas as pd
 
+# Selecionar esporte
+esporte = st.selectbox("Selecione o Esporte", ["Football", "Basketball"])
+
 # Carregar dados
-data_path = "../data/formatted/football.csv"
+data_path = f"../data/formatted/{esporte.lower()}.csv"
 try:
-    football_data = pd.read_csv(data_path)
+    dados_esporte = pd.read_csv(data_path)
 except Exception as e:
     st.error(f"Erro ao carregar dados: {e}")
     st.stop()
 
 # Processar ligas e temporadas
-if 'id' in football_data.columns:
-    campeonatos_disponiveis = football_data['id'].dropna().unique()
+if 'id' in dados_esporte.columns:
+    campeonatos_disponiveis = dados_esporte['id'].dropna().unique()
     
     campeonatos_info = []
     for campeonato in campeonatos_disponiveis:
         try:
-            # Dividir o ID em duas partes
             if '@' in campeonato:
                 liga_part, url_part = campeonato.split('@', 1)
             else:
                 liga_part = campeonato
                 url_part = ''
             
-            # Formatar nome da liga (parte antes do @)
-            liga_nome = liga_part.replace('-', ' ').title()
+            liga_nome = liga_part.replace('-', ' ').title().replace('Serie', 'Série')
             
-            # Substituir Serie por Série
-            liga_nome = liga_nome.replace('Serie', 'Série')
-            
-            # Extrair temporada da URL
             if url_part:
                 season = url_part.strip('/').split('/')[-1].split('-')[-1]
-                # Validar se é um ano (4 dígitos)
-                if len(season) == 4 and season.isdigit():
-                    temporada = season
-                else:
-                    temporada = 'N/A'
+                temporada = season if len(season) == 4 and season.isdigit() else 'N/A'
             else:
                 temporada = 'N/A'
             
@@ -49,28 +42,26 @@ if 'id' in football_data.columns:
         except Exception as e:
             st.error(f"Erro ao processar {campeonato}: {e}")
 
-    # Criar DataFrame com ligas e temporadas
     df_ligas = pd.DataFrame(campeonatos_info).drop_duplicates()
 
-    # Selectbox para ligas
+    # Seleção de liga
     liga_selecionada = st.selectbox(
         'Selecione a Liga',
         sorted(df_ligas['liga'].unique())
-    )
+    )  # Fechamento correto do selectbox
     
-    # Filtrar temporadas
+    # Filtro de temporada
     temporadas_disponiveis = df_ligas[df_ligas['liga'] == liga_selecionada]['temporada'].unique()
     
-    if len(temporadas_disponiveis) == 0:
+    if temporadas_disponiveis.size == 0:  # Verificação correta para arrays NumPy
         st.warning("Nenhuma temporada disponível para esta liga")
         st.stop()
         
-    # Selectbox para temporadas
     temporada_selecionada = st.selectbox(
         'Selecione a Temporada',
         sorted(temporadas_disponiveis, reverse=True)
-    )
-    
+    )  # Fechamento correto do selectbox
+
     # Obter ID correspondente
     id_selecionado = df_ligas[
         (df_ligas['liga'] == liga_selecionada) &
@@ -81,12 +72,26 @@ else:
     st.error("Coluna 'id' não encontrada nos dados")
     st.stop()
 
-# Mostrar dados
+# Exibir dados
 st.header(f"{liga_selecionada} - {temporada_selecionada}")
-dados_filtrados = football_data[football_data['id'] == id_selecionado]
+dados_filtrados = dados_esporte[dados_esporte['id'] == id_selecionado]
 
 if not dados_filtrados.empty:
-    colunas = ['date', 'home', 'away', 'result', 'odds home', 'odds tie', 'odds away']
+    # Definir colunas dinamicamente conforme o esporte
+    colunas_base = ['date', 'home', 'away', 'result']
+    
+    # Verificar quais colunas de odds existem
+    colunas_odds = []
+    if 'odds home' in dados_esporte.columns:
+        colunas_odds.append('odds home')
+    if 'odds tie' in dados_esporte.columns:  # Só existirá no football
+        colunas_odds.append('odds tie')
+    if 'odds away' in dados_esporte.columns:
+        colunas_odds.append('odds away')
+    
+    # Combinar colunas
+    colunas = colunas_base + colunas_odds
+    
     st.dataframe(dados_filtrados[colunas], hide_index=True)
 else:
     st.warning("Nenhum dado encontrado para esta seleção")
