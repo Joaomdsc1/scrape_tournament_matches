@@ -17,13 +17,15 @@
         ]
 """
 
-from .homepage_paths import get_tournament_url_paths
-from .validate_paths import validate_url_paths
-from .web_scrape import save_web_scraped_matches, web_scrape_from_provided_paths
+from .scrape_standings import save_standings
+from .scrape_matches import web_scrape_from_provided_paths, save_web_scraped_matches
+from .validate_url_paths import validate_url_paths
+from .get_season_paths import get_path_to_desired_seasons
 
 __all__ = [
-    "get_tournament_url_paths",
-    "validate_url_paths",
+    "save_standings",
     "web_scrape_from_provided_paths",
     "save_web_scraped_matches",
+    "validate_url_paths",
+    "get_path_to_desired_seasons",
 ]
