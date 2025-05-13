@@ -15,7 +15,7 @@ paths = [
 # Garante que o diretório exista
 output_dir = 'data/standings/hmtl'
 os.makedirs(output_dir, exist_ok=True)
-for path in paths:
+for path in paths:  
     output_path = os.path.join(output_dir, "/".join(path.split("/")[3:4])+'.html')
 
     with sync_playwright() as p:
