@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 
+st.set_page_config(page_title="Classificações e Partidas", layout="wide")
+
 # Selecionar esporte
 esporte = st.selectbox("Selecione o Esporte", ["Football", "Basketball"])
 
@@ -11,6 +13,15 @@ try:
 except Exception as e:
     st.error(f"Erro ao carregar dados: {e}")
     st.stop()
+
+# Carregar classificação
+standings_path = "../data/standings/csv/standings_2011_2021.csv"
+try:
+    standings = pd.read_csv(standings_path)
+except Exception as e:
+    st.error(f"Erro ao carregar tabela de classificação: {e}")
+    standings = pd.DataFrame()  # vazio, mas o app continua
+
 
 # Processar ligas e temporadas
 if 'id' in dados_esporte.columns:
@@ -25,7 +36,7 @@ if 'id' in dados_esporte.columns:
                 liga_part = campeonato
                 url_part = ''
             
-            liga_nome = liga_part.replace('-', ' ').title().replace('Serie', 'Série')
+            liga_nome = liga_part.replace('-', ' ').title()
             
             if url_part:
                 season = url_part.strip('/').split('/')[-1].split('-')[-1]
@@ -95,3 +106,28 @@ if not dados_filtrados.empty:
     st.dataframe(dados_filtrados[colunas], hide_index=True)
 else:
     st.warning("Nenhum dado encontrado para esta seleção")
+
+# === PROCESSAR NOMES PARA SELEÇÃO ===
+standings['liga'] = standings['tournament'].apply(lambda x: x.rsplit('-', 1)[0].replace('-', ' ').title())
+standings['temporada'] = standings['tournament'].apply(lambda x: x.rsplit('-', 1)[1])
+
+ligas_disponiveis = standings['liga'].unique()
+liga_selecionada = st.selectbox('Selecione a Liga', sorted(ligas_disponiveis))
+
+temporadas_disponiveis = standings[standings['liga'] == liga_selecionada]['temporada'].unique()
+temporada_selecionada = st.selectbox('Selecione a Temporada', sorted(temporadas_disponiveis, reverse=True))
+
+# === IDENTIFICADOR DE TORNEIO ===
+tournament_id = f"{liga_selecionada.lower().replace(' ', '-')}-{temporada_selecionada}"
+st.markdown(f"**Tournament ID buscado:** `{tournament_id}`")
+
+# === EXIBIR CLASSIFICAÇÃO ===
+st.subheader(f"Classificação: {liga_selecionada} - {temporada_selecionada}")
+standings_filtrada = standings[standings['tournament'] == tournament_id]
+
+if not standings_filtrada.empty:
+    st.dataframe(standings_filtrada.drop(columns=['liga', 'temporada']), hide_index=True)
+else:
+    st.warning("Classificação não encontrada para esta liga/temporada.")
+
+
