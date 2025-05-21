@@ -19,7 +19,13 @@ except Exception as e:
     st.stop()
 
 # Escolher o País
-country = st.sidebar.selectbox("Escolha o país", ["Brazil", "Alemanha"])
+countries_extracted = []
+if 'id' in sports_data.columns:
+    for valor in sports_data['id']:
+        country_extracted = valor.split('/')[4]
+        if country_extracted not in countries_extracted:
+            countries_extracted.append(country_extracted)
+country = st.sidebar.selectbox("Escolha o país", countries_extracted)
 
 # Escolher Liga
 league = st.sidebar.selectbox('Escolha a liga que deseja analisar', ['bundesliga', 'premier league'])
