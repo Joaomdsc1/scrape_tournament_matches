@@ -18,9 +18,9 @@
 """
 
 from .scrape_standings import save_standings
-from .scrape_matches import web_scrape_from_provided_paths, save_web_scraped_matches
-from .validate_url_paths import validate_url_paths
-from .get_season_paths import get_path_to_desired_seasons
+from .web_scrape import web_scrape_from_provided_paths, save_web_scraped_matches
+from .validate_paths import validate_url_paths
+from .season_years import get_path_to_desired_seasons
 
 __all__ = [
     "save_standings",
