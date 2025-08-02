@@ -12,6 +12,8 @@ base_paths = [
     "/football/brazil/serie-b",
     "/football/england/premier-league",
     "/football/italy/serie-a",
+    "/football/spain/la-liga",
+    "/football/france/ligue-1",
     "/basketball/usa/nba",
     "/basketball/brazil/nbb",
 ]
