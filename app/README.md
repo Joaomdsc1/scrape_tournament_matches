@@ -39,6 +39,15 @@ Este é um dashboard interativo desenvolvido com Streamlit para análise de dado
 - Vitórias fora de casa
 - Empates
 
+### 📊 Gráfico de Distribuição
+- **Gráfico de Pizza Interativo**: Visualização da distribuição de vitórias da casa, empates e vitórias fora
+- **Cores Intuitivas**: 
+  - Verde para vitórias da casa
+  - Dourado para empates  
+  - Azul para vitórias fora
+- **Percentuais**: Exibição de estatísticas detalhadas com percentuais
+- **Gráfico de Rosca**: Design moderno com espaço central
+
 ### 💾 Download de Dados
 - Download da classificação em formato CSV
 - Download das partidas em formato CSV
@@ -47,7 +56,7 @@ Este é um dashboard interativo desenvolvido com Streamlit para análise de dado
 
 1. **Instalar dependências**:
    ```bash
-   pip install streamlit pandas
+   pip install -r requirements.txt
    ```
 
 2. **Executar o app**:
@@ -83,6 +92,7 @@ O app utiliza os seguintes arquivos de dados:
 
 ### Área Principal
 - Métricas resumidas
+- Gráfico de pizza com distribuição de resultados
 - Tabela de classificação
 - Lista de partidas
 - Botões de download
