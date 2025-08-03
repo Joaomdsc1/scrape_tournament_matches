@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 from datetime import datetime
+import plotly.express as px
 
 # Configuração da página
 st.set_page_config(
@@ -99,6 +100,26 @@ def calcular_classificacao(dados_partidas):
     df_classificacao.insert(0, 'Pos', range(1, len(df_classificacao) + 1))
     
     return df_classificacao
+
+# Função para calcular estatísticas gerais
+def calcular_estatisticas_gerais(dados_partidas):
+    """Calcula estatísticas gerais de vitórias da casa, empates e vitórias fora"""
+    if dados_partidas.empty or 'winner' not in dados_partidas.columns:
+        return None
+    
+    # Calcular totais
+    vitorias_casa = len(dados_partidas[dados_partidas['winner'] == 'h'])
+    vitorias_fora = len(dados_partidas[dados_partidas['winner'] == 'a'])
+    empates = len(dados_partidas[dados_partidas['winner'] == 'd'])
+    
+    total_partidas = len(dados_partidas)
+    
+    return {
+        'Vitórias Casa': vitorias_casa,
+        'Empates': empates,
+        'Vitórias Fora': vitorias_fora,
+        'Total': total_partidas
+    }
 
 # ===== SIDEBAR =====
 st.sidebar.header("🎯 Configurações")
@@ -288,6 +309,88 @@ if 'id' in dados_esporte.columns:
                     if 'winner' in dados_filtrados.columns:
                         empates = len(dados_filtrados[dados_filtrados['winner'] == 'd'])
                         st.metric("🤝 Empates", empates)
+                
+                # ===== GRÁFICO DE PIZZA =====
+                if 'winner' in dados_filtrados.columns:
+                    st.markdown("---")
+                    st.subheader("📊 Distribuição de Resultados")
+                    
+                    # Calcular estatísticas para o gráfico
+                    estatisticas = calcular_estatisticas_gerais(dados_filtrados)
+                    
+                    if estatisticas and estatisticas['Total'] > 0:
+                        # Criar dados para o gráfico de pizza
+                        dados_pizza = {
+                            'Resultado': ['Vitórias Casa', 'Empates', 'Vitórias Fora'],
+                            'Quantidade': [
+                                estatisticas['Vitórias Casa'],
+                                estatisticas['Empates'],
+                                estatisticas['Vitórias Fora']
+                            ]
+                        }
+                        
+                        df_pizza = pd.DataFrame(dados_pizza)
+                        
+                        # Criar gráfico de pizza
+                        fig = px.pie(
+                            df_pizza,
+                            values='Quantidade',
+                            names='Resultado',
+                            title='Distribuição de Resultados: Vitórias Casa, Empates e Vitórias Fora',
+                            color_discrete_map={
+                                'Vitórias Casa': '#2E8B57',  # Verde para vitórias casa
+                                'Empates': '#FFD700',        # Dourado para empates
+                                'Vitórias Fora': '#4169E1'   # Azul para vitórias fora
+                            }
+                        )
+                        
+                        # Personalizar o gráfico
+                        fig.update_traces(
+                            textposition='inside',
+                            textinfo='percent+label',
+                            hole=0.3  # Gráfico de rosca
+                        )
+                        
+                        fig.update_layout(
+                            showlegend=True,
+                            legend=dict(
+                                orientation="h",
+                                yanchor="bottom",
+                                y=1.02,
+                                xanchor="right",
+                                x=1
+                            ),
+                            height=400
+                        )
+                        
+                        # Exibir o gráfico
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Exibir estatísticas detalhadas
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            percentual_vitorias_casa = (estatisticas['Vitórias Casa'] / estatisticas['Total']) * 100
+                            st.metric(
+                                "🏠 Vitórias Casa", 
+                                f"{estatisticas['Vitórias Casa']} ({percentual_vitorias_casa:.1f}%)"
+                            )
+                        
+                        with col2:
+                            percentual_empates = (estatisticas['Empates'] / estatisticas['Total']) * 100
+                            st.metric(
+                                "🤝 Empates", 
+                                f"{estatisticas['Empates']} ({percentual_empates:.1f}%)"
+                            )
+                        
+                        with col3:
+                            percentual_vitorias_fora = (estatisticas['Vitórias Fora'] / estatisticas['Total']) * 100
+                            st.metric(
+                                "✈️ Vitórias Fora", 
+                                f"{estatisticas['Vitórias Fora']} ({percentual_vitorias_fora:.1f}%)"
+                            )
+                    else:
+                        st.warning("⚠️ Não há dados suficientes para gerar o gráfico de distribuição.")
                 
                 # ===== SEÇÃO DE CLASSIFICAÇÃO =====
                 st.markdown("---")
