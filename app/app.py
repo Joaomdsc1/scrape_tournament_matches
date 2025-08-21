@@ -296,19 +296,16 @@ if 'id' in dados_esporte.columns:
                     st.metric("📊 Total de Partidas", len(dados_filtrados))
                 
                 with col2:
-                    if 'winner' in dados_filtrados.columns:
-                        vitorias_casa = len(dados_filtrados[dados_filtrados['winner'] == 'h'])
-                        st.metric("🏠 Vitórias Casa", vitorias_casa)
+                    st.metric("🏟️ Número de Times", len(times_disponiveis))
                 
+                classificacao = calcular_classificacao(dados_filtrados)
                 with col3:
-                    if 'winner' in dados_filtrados.columns:
-                        vitorias_fora = len(dados_filtrados[dados_filtrados['winner'] == 'a'])
-                        st.metric("✈️ Vitórias Fora", vitorias_fora)
-                
-                with col4:
-                    if 'winner' in dados_filtrados.columns:
-                        empates = len(dados_filtrados[dados_filtrados['winner'] == 'd'])
-                        st.metric("🤝 Empates", empates)
+                    # Get champion team (first place in standings)
+                    if not classificacao.empty:
+                        campeao = classificacao.iloc[0]['Time']
+                        st.metric("🏆 Campeão", campeao)
+                    else:
+                        st.metric("🏆 Campeão", "Não disponível")
                 
                 # ===== GRÁFICO DE PIZZA =====
                 if 'winner' in dados_filtrados.columns:
@@ -397,7 +394,8 @@ if 'id' in dados_esporte.columns:
                 st.subheader("🏆 Classificação")
                 
                 # Calcular classificação
-                classificacao = calcular_classificacao(dados_filtrados)
+                # # # Está sendo calculado na seção de exibição de dados para poder printar o campeão
+                # classificacao = calcular_classificacao(dados_filtrados)
                 
                 if not classificacao.empty:
                     # Renomear colunas para melhor visualização
@@ -436,7 +434,7 @@ if 'id' in dados_esporte.columns:
                 
                 # ===== SEÇÃO DE PARTIDAS =====
                 st.markdown("---")
-                st.subheader("⚽ Partidas")
+                st.subheader("Partidas")
                 
                 # Preparar dados para exibição
                 colunas_exibicao = ['date', 'home', 'away', 'result']
