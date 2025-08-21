@@ -63,6 +63,7 @@ All that is needed is:
     $ python3 format.py          # formatting matches
     $ python3 filter.py          # filter matches
     $ python3 print_metadata.py  # metadata
+    $ python3 rankings.py        # rankings    
     ```
 
 <br>
