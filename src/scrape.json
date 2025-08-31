@@ -10,19 +10,14 @@
             "/football/brazil/serie-a-betano/",
             "/football/germany/bundesliga/",
             "/football/brazil/serie-b-superbet/",
-            "/football/england/premier-league/",
-            "/football/italy/serie-a/",
-            "/football/spain/la-liga/",
-            "/football/france/ligue-1/",
-            "/basketball/usa/nba/",
-            "/basketball/brazil/nbb/"
+            "/football/italy/serie-a/"
         ],
         "file": "../data/url_paths.json"
     },
     "seasons": {
         "first": [
-            "2011",
-            "2010-2011"
+            "2018",
+            "2018-2019"
         ],
         "last": [
             "2021",
