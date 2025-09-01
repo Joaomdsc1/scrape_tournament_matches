@@ -10,15 +10,10 @@ base_paths = [
     "/football/brazil/serie-a",
     "/football/germany/bundesliga",
     "/football/brazil/serie-b",
-    "/football/england/premier-league",
-    "/football/italy/serie-a",
-    "/football/spain/la-liga",
-    "/football/france/ligue-1",
-    "/basketball/usa/nba",
-    "/basketball/brazil/nbb",
+    "/football/italy/serie-a"
 ]
 
-years = range(2011, 2022)
+years = range(2017, 2022)
 
 # Correções apenas para scraping
 slug_corrections = {
@@ -34,7 +29,8 @@ for base in base_paths:
         paths.append((base, f"{base}-{year-1}-{year}/"))
 
 # Diretório de saída
-output_dir = Path('data/standings/csv')
+base_dir = Path(__file__).parent.parent  # Vai para o diretório raiz do projeto
+output_dir = base_dir / 'data' / '4_standings'
 output_dir.mkdir(parents=True, exist_ok=True)
 output_path = output_dir / 'standings_2011_2021.csv'
 
