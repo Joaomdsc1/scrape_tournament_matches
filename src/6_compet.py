@@ -61,46 +61,52 @@ class RankingProcessor:
             logger.warning(f"DataFrame de rankings está vazio ou None")
             return None
             
-        # Extrai o nome base do torneio (ex: 'serie-a-betano' -> 'serie-a-betano')
-        # Mantém o nome completo para evitar confusão entre ligas diferentes
-        base_tournament = tournament_id.split('@')[0] if '@' in tournament_id else tournament_id
+        # O tournament_id agora vem do novo método _extract_league_name()
+        # que já extrai apenas o nome da liga (ex: 'bundesliga', 'serie-a')
+        base_tournament = tournament_id
         
-        logger.info(f"Buscando rankings para torneio: '{tournament_id}' (base: '{base_tournament}') na temporada '{season}'")
+        logger.info(f"Buscando rankings para torneio: '{tournament_id}' na temporada '{season}'")
         
         # 1. Tenta a busca exata primeiro
-        filtered_rankings = rankings_df[
-            (rankings_df['tournament'].str.contains(tournament_id, case=False, na=False)) &
-            (rankings_df['season'] == season)
-        ].copy()
-        
+        # Adaptação especial para "serie-a"
+        if base_tournament.lower() == "serie-a":
+            # Verifica se o formato da temporada é AAAA ou AAAA-AAAA
+            if '-' in season:
+                # AAAA-AAAA: busca por Serie A italiana
+                filtered_rankings = rankings_df[
+                    (rankings_df['tournament'].str.contains("serie-a", case=False, na=False)) &
+                    (rankings_df['season'] == season) &
+                    (rankings_df['tournament'].str.contains('-', na=False))  # Garante que tem hífen (italiana)
+                ].copy()
+            else:
+                # AAAA: busca por Serie A brasileira
+                filtered_rankings = rankings_df[
+                    (rankings_df['tournament'].str.contains("serie-a", case=False, na=False)) &
+                    (rankings_df['season'] == season) &
+                    (~rankings_df['tournament'].str.contains('-', na=False))  # Garante que não tem hífen (brasileira)
+                ].copy()
+        else:
+            # Busca genérica por nome da liga
+            filtered_rankings = rankings_df[
+                (rankings_df['tournament'].str.contains(base_tournament, case=False, na=False)) &
+                (rankings_df['season'] == season)
+            ].copy()
+
         # 2. Se a busca exata falhar, tenta busca mais específica
         if filtered_rankings.empty:
-            logger.warning(f"Busca exata falhou para '{tournament_id}' temporada '{season}'. Tentando busca específica...")
+            logger.warning(f"Busca exata falhou para '{base_tournament}' temporada '{season}'. Tentando busca específica...")
             
-            # Para torneios brasileiros (serie-a-betano), busca por serie-a-YYYY
-            if 'betano' in base_tournament.lower() or 'brasil' in base_tournament.lower():
+            # Para torneios brasileiros, busca por padrões específicos
+            if 'serie-a' in base_tournament.lower():
                 brazilian_pattern = f"serie-a-{season}"
                 filtered_rankings = rankings_df[
                     (rankings_df['tournament'].str.contains(brazilian_pattern, case=False, na=False)) &
                     (rankings_df['season'] == season)
                 ].copy()
                 if not filtered_rankings.empty:
-                    logger.info(f"Encontrados dados brasileiros: '{brazilian_pattern}' para '{tournament_id}'")
+                    logger.info(f"Encontrados dados brasileiros: '{brazilian_pattern}' para '{base_tournament}'")
             
-            # Para torneios italianos, busca por padrões específicos da Itália
-            elif any(keyword in base_tournament.lower() for keyword in ['italy', 'italian', 'serie-a']) and 'betano' not in base_tournament.lower():
-                # Busca por padrões italianos (se existirem no futuro)
-                italian_patterns = [f"serie-a-italy-{season}", f"italy-serie-a-{season}", f"italian-serie-a-{season}"]
-                for pattern in italian_patterns:
-                    filtered_rankings = rankings_df[
-                        (rankings_df['tournament'].str.contains(pattern, case=False, na=False)) &
-                        (rankings_df['season'] == season)
-                    ].copy()
-                    if not filtered_rankings.empty:
-                        logger.info(f"Encontrados dados italianos: '{pattern}' para '{tournament_id}'")
-                        break
-            
-            # Se ainda não encontrou, tenta busca genérica apenas como último recurso
+            # Para outros tipos de torneio, busca genérica
             if filtered_rankings.empty:
                 logger.warning(f"Busca específica falhou. Tentando busca genérica por '{base_tournament}'...")
                 filtered_rankings = rankings_df[
@@ -121,10 +127,10 @@ class RankingProcessor:
             ].copy()
 
         if filtered_rankings.empty:
-            logger.warning(f"Busca flexível também falhou. Nenhum dado de ranking encontrado para '{tournament_id}' na temporada '{season}' ou similar.")
+            logger.warning(f"Busca flexível também falhou. Nenhum dado de ranking encontrado para '{base_tournament}' na temporada '{season}' ou similar.")
             return None
             
-        logger.info(f"Rankings encontrados para '{tournament_id}' -> '{filtered_rankings['tournament'].iloc[0]}' na temporada '{filtered_rankings['season'].iloc[0]}'.") 
+        logger.info(f"Rankings encontrados para '{base_tournament}' -> '{filtered_rankings['tournament'].iloc[0]}' na temporada '{filtered_rankings['season'].iloc[0]}'.") 
         return filtered_rankings
     
     @staticmethod
@@ -389,7 +395,7 @@ class CompetitiveBalanceAnalyzer:
     
     def __init__(self, games_df: pd.DataFrame, championship_id: str,
                  rankings_df: Optional[pd.DataFrame] = None,
-                 alpha: float = 0.05, num_simulations: int = 1000):
+                 alpha: float = 0.05, num_simulations: int = 100):
         """
         Inicializa o analisador de competitividade.
         
@@ -436,21 +442,83 @@ class CompetitiveBalanceAnalyzer:
     def _extract_league_name(self) -> str:
         """Extrai o nome da liga do ID."""
         try:
-            return self.championship_id.split('@')[0] if '@' in self.championship_id else self.championship_id
-        except:
+            if '@' in self.championship_id and '/' in self.championship_id:
+                # Formato: nome@/football/pais/liga-temporada/
+                # Extrai a parte da liga-temporada (posição 3)
+                path_parts = self.championship_id.split('/')
+                if len(path_parts) > 3:
+                    liga_temporada = path_parts[3]
+                    # Remove a barra final se existir
+                    liga_temporada = liga_temporada.rstrip('/')
+                    # Extrai apenas o nome da liga (sem a temporada)
+                    if '-' in liga_temporada:
+                        # Para casos como "bundesliga-2015-2016", pega apenas "bundesliga"
+                        parts = liga_temporada.split('-')
+                        # Procura o primeiro ano para determinar onde termina o nome da liga
+                        for i, part in enumerate(parts):
+                            if part.isdigit() and len(part) == 4:  # Encontrou um ano
+                                return '-'.join(parts[:i])
+                        # Se não encontrou ano, retorna tudo
+                        return liga_temporada
+                    return liga_temporada
+                else:
+                    # Fallback: usa a parte antes do @
+                    return self.championship_id.split('@')[0]
+            elif '@' in self.championship_id:
+                # Formato antigo: nome@caminho
+                return self.championship_id.split('@')[0]
+            else:
+                return self.championship_id
+        except Exception as e:
+            logger.warning(f"Erro ao extrair nome da liga de '{self.championship_id}': {e}")
             return "Liga Desconhecida"
     
     def _extract_season(self) -> str:
         """Extrai a temporada do ID."""
         try:
-            if '@' in self.championship_id:
+            if '@' in self.championship_id and '/' in self.championship_id:
+                # Formato: nome@/football/pais/liga-temporada/
+                # Extrai a parte da liga-temporada (posição 3)
+                path_parts = self.championship_id.split('/')
+                if len(path_parts) > 3:
+                    liga_temporada = path_parts[3]
+                    # Remove a barra final se existir
+                    liga_temporada = liga_temporada.rstrip('/')
+                    # Extrai a temporada do final da string
+                    if '-' in liga_temporada:
+                        parts = liga_temporada.split('-')
+                        # Procura onde começam os anos
+                        for i, part in enumerate(parts):
+                            if part.isdigit() and len(part) == 4:  # Encontrou um ano
+                                # Retorna a temporada (anos encontrados)
+                                season_parts = parts[i:]
+                                # Se tem apenas um ano, retorna só ele
+                                if len(season_parts) == 1:
+                                    return season_parts[0]
+                                # Se tem dois anos, retorna no formato YYYY-YYYY
+                                elif len(season_parts) == 2 and season_parts[1].isdigit() and len(season_parts[1]) == 4:
+                                    return f"{season_parts[0]}-{season_parts[1]}"
+                                # Se só o primeiro é ano válido, retorna só ele
+                                else:
+                                    return season_parts[0]
+                        # Se não encontrou ano nos splits, tenta regex
+                        import re
+                        year_match = re.search(r'(\d{4}(?:-\d{4})?)', liga_temporada)
+                        return year_match.group(1) if year_match else "Temporada Desconhecida"
+                    else:
+                        # Sem hífen, pode ser só um ano no final
+                        import re
+                        year_match = re.search(r'(\d{4})$', liga_temporada)
+                        return year_match.group(1) if year_match else "Temporada Desconhecida"
+            elif '@' in self.championship_id:
+                # Fallback para formato antigo
                 path_part = self.championship_id.split('@')[1]
-                # Procurar por ano (4 dígitos)
                 import re
-                year_match = re.search(r'(\d{4})', path_part)
+                year_match = re.search(r'(\d{4}(?:-\d{4})?)', path_part)
                 return year_match.group(1) if year_match else "Temporada Desconhecida"
             return "Temporada Desconhecida"
-        except:
+        except Exception as e:
+            logger.warning(f"Erro ao extrair temporada de '{self.championship_id}': {e}")
             return "Temporada Desconhecida"
     
     def _load_team_strengths(self):
@@ -1151,7 +1219,7 @@ def main():
         RANKINGS_CSV_PATH = '../data/4_standings/standings.csv'  
         OUTPUT_DIR = '../data/6_analysis'
         ALPHA = 0.05
-        NUM_SIMULATIONS = 500
+        NUM_SIMULATIONS = 100
         
         # Verificar arquivos
         if not Path(GAMES_CSV_PATH).exists():
