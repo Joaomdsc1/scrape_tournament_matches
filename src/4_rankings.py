@@ -89,3 +89,4 @@ if all_dfs:
     print(f"\nTodas as tabelas salvas em '{output_path}'")
 else:
     print("Nenhuma tabela foi coletada.")
+ 
