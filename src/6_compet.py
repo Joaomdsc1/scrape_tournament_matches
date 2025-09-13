@@ -395,7 +395,8 @@ class CompetitiveBalanceAnalyzer:
     
     def __init__(self, games_df: pd.DataFrame, championship_id: str,
                  rankings_df: Optional[pd.DataFrame] = None,
-                 alpha: float = 0.05, num_simulations: int = 100):
+                 alpha: float = 0.05, num_simulations: int = 100,
+                 current_season_weight: float = 0.5):
         """
         Inicializa o analisador de competitividade.
         
@@ -410,6 +411,7 @@ class CompetitiveBalanceAnalyzer:
         self.num_simulations = num_simulations
         self.championship_id = championship_id
         self.rankings_df = rankings_df
+        self.current_season_weight = current_season_weight
         
         # Filtrar e ordenar jogos do campeonato
         self.season_games = games_df[
@@ -522,46 +524,89 @@ class CompetitiveBalanceAnalyzer:
             return "Temporada Desconhecida"
     
     def _load_team_strengths(self):
-        """Carrega forças dos times baseado nos rankings."""
+        """Carrega forças dos times combinando rankings da temporada anterior e atual."""
         self.team_strengths = {}
         self.has_ranking_data = False
         
-        if self.rankings_df is not None:
-            # Tentar carregar rankings da temporada anterior
-            prev_season = self.season # Define um valor padrão
-            try:
-                if '-' in self.season:
-                    # Lida com o formato "YYYY-YYYY" (ex: "2015-2016" -> "2014-2015")
-                    start_year, end_year = map(int, self.season.split('-'))
-                    prev_season = f"{start_year - 1}-{end_year - 1}"
-                elif self.season.isdigit():
-                    # Lida com o formato "YYYY" (ex: "2015" -> "2014")
-                    prev_season = str(int(self.season) - 1)
-                # Se não for nenhum dos formatos, prev_season mantém o valor de self.season
-            except (ValueError, IndexError):
-                # Lida com strings mal formatadas como "2015-" ou "abc-def"
-                logger.warning(f"Formato de temporada inválido: '{self.season}'. Usando o valor original.")
-                prev_season = self.season
+        if self.rankings_df is None:
+            self.match_simulator = ImprovedMatchSimulator(self.team_strengths)
+            return
+
+        # --- 1. Tentar carregar rankings da temporada ANTERIOR ---
+        prev_season = self.season
+        try:
+            if '-' in self.season:
+                start_year, end_year = map(int, self.season.split('-'))
+                prev_season = f"{start_year - 1}-{end_year - 1}"
+            elif self.season.isdigit():
+                prev_season = str(int(self.season) - 1)
+        except (ValueError, IndexError):
+            logger.warning(f"Formato de temporada inválido: '{self.season}'.")
+            prev_season = self.season
             
-            rankings_data = RankingProcessor.load_rankings(
-                self.rankings_df, self.league, prev_season
-            )
+        rankings_prev = RankingProcessor.load_rankings(self.rankings_df, self.league, prev_season)
+        strengths_prev = {}
+        if rankings_prev is not None:
+            strengths_prev = RankingProcessor.calculate_team_strengths(rankings_prev, self.teams)
+            logger.info(f"Carregadas forças da temporada anterior ({prev_season}) para {len(strengths_prev)} times.")
+        else:
+            logger.warning(f"Não foi possível carregar rankings para a temporada anterior ({prev_season}).")
+
+        # --- 2. Tentar carregar rankings da temporada ATUAL ---
+        rankings_curr = RankingProcessor.load_rankings(self.rankings_df, self.league, self.season)
+        strengths_curr = {}
+        if rankings_curr is not None:
+            strengths_curr = RankingProcessor.calculate_team_strengths(rankings_curr, self.teams)
+            logger.info(f"Carregadas forças da temporada atual ({self.season}) para {len(strengths_curr)} times.")
+        else:
+            logger.warning(f"Não foi possível carregar rankings para a temporada atual ({self.season}).")
+
+        # --- 3. Combinar as forças ---
+        if not strengths_prev and not strengths_curr:
+            logger.warning("Nenhum dado de ranking encontrado. Simulação será probabilística simples.")
+            self.match_simulator = ImprovedMatchSimulator(self.team_strengths)
+            return
+
+        combined_strengths = {}
+        w_curr = self.current_season_weight
+        w_prev = 1.0 - w_curr
+
+        for team in self.teams:
+            s_prev = strengths_prev.get(team, 0.5)  # Usa 0.5 (neutro) se time não encontrado
+            s_curr = strengths_curr.get(team, 0.5)
             
-            if rankings_data is not None:
-                self.team_strengths = RankingProcessor.calculate_team_strengths(
-                    rankings_data, self.teams
-                )
-                self.has_ranking_data = True
-                
-                # Calcular variância das forças (medida de desigualdade inicial)
-                self.strength_variance = np.var(list(self.team_strengths.values()))
-                
-                logger.info(f"Carregadas forças de {len(self.team_strengths)} times do ranking da temporada {prev_season}")
-                logger.info(f"Variância das forças: {self.strength_variance:.4f}")
+            # Se um dos rankings não existe, usar o outro com 100% do peso
+            if not strengths_prev:
+                final_strength = s_curr
+            elif not strengths_curr:
+                final_strength = s_prev
             else:
-                logger.warning(f"Não foi possível carregar rankings para {self.league} {prev_season}")
+                # Média ponderada
+                final_strength = (w_prev * s_prev) + (w_curr * s_curr)
+            
+            combined_strengths[team] = final_strength
+            
+        self.team_strengths = combined_strengths
+        self.has_ranking_data = True
         
-        # Criar simulador
+        # --- 4. Normalizar as forças combinadas ---
+        if self.team_strengths:
+            mean_val = np.mean(list(self.team_strengths.values()))
+            min_val, max_val = min(self.team_strengths.values()), max(self.team_strengths.values())
+            
+            # Centralizar em 0.5 e re-escalar para o intervalo [0.1, 0.9]
+            if max_val > min_val:
+                for team in self.team_strengths:
+                    # Normaliza para [0, 1] e depois mapeia para [0.1, 0.9]
+                    norm_strength = (self.team_strengths[team] - min_val) / (max_val - min_val)
+                    self.team_strengths[team] = 0.1 + 0.8 * norm_strength
+
+        self.strength_variance = np.var(list(self.team_strengths.values()))
+        
+        logger.info(f"Forças combinadas de {len(self.team_strengths)} times calculadas (Peso atual: {w_curr*100}%)")
+        logger.info(f"Variância final das forças: {self.strength_variance:.4f}")
+
+        # Criar simulador com as forças combinadas
         self.match_simulator = ImprovedMatchSimulator(self.team_strengths)
         
     def _reset_results(self):
@@ -951,10 +996,12 @@ class CompetitiveBalanceAnalyzer:
 class MultiLeagueAnalyzer:
     """Analisador para múltiplos campeonatos com rankings."""
     
-    def __init__(self, alpha: float = 0.05, num_simulations: int = 1000):
+    def __init__(self, alpha: float = 0.05, num_simulations: int = 1000,
+                 current_season_weight: float = 0.5):
         self.alpha = alpha
         self.num_simulations = num_simulations
         self.results: List[AnalysisResult] = []
+        self.current_season_weight = current_season_weight
         
     def analyze_all_leagues(self, df_jogos: pd.DataFrame, 
                           df_rankings: Optional[pd.DataFrame] = None,
@@ -1005,7 +1052,8 @@ class MultiLeagueAnalyzer:
                     championship_id=champ_id,
                     rankings_df=df_rankings_clean,
                     alpha=self.alpha,
-                    num_simulations=self.num_simulations
+                    num_simulations=self.num_simulations,
+                    current_season_weight=self.current_season_weight
                 )
                 
                 # Executar análise completa
@@ -1220,6 +1268,7 @@ def main():
         OUTPUT_DIR = '../data/6_analysis'
         ALPHA = 0.05
         NUM_SIMULATIONS = 100
+        CURRENT_SEASON_WEIGHT = 0.5
         
         # Verificar arquivos
         if not Path(GAMES_CSV_PATH).exists():
@@ -1241,7 +1290,8 @@ def main():
             logger.info("Continuando análise sem dados de ranking")
         
         # Inicializar analisador
-        analyzer = MultiLeagueAnalyzer(alpha=ALPHA, num_simulations=NUM_SIMULATIONS)
+        analyzer = MultiLeagueAnalyzer(alpha=ALPHA, num_simulations=NUM_SIMULATIONS,
+                                       current_season_weight=CURRENT_SEASON_WEIGHT)
         
         # Executar análises
         results = analyzer.analyze_all_leagues(

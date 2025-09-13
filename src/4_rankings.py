@@ -9,11 +9,13 @@ import re
 base_paths = [
     "/football/brazil/serie-a",
     "/football/germany/bundesliga",
-    "/football/brazil/serie-b",
-    "/football/italy/serie-a"
+    "/football/italy/serie-a",
+    "/football/england/premier-league",
+    "/football/netherlands/eredivisie",
+    "/football/portugal/primeira-liga"
 ]
 
-years = range(2015, 2018)
+years = range(2010, 2019)
 
 # Correções apenas para scraping
 slug_corrections = {

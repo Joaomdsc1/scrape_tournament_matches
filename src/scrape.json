@@ -7,21 +7,24 @@
         "validate": true,
         "mode": "file",
         "list": [
-            "/football/brazil/serie-a-betano/",
-            "/football/germany/bundesliga/",
-            "/football/brazil/serie-b-superbet/",
-            "/football/italy/serie-a/"
+            "/football/brazil/serie-a",
+            "/football/germany/bundesliga",
+            "/football/italy/serie-a",
+            "/football/england/premier-league",
+            "/football/netherlands/eredivisie",
+            "/football/portugal/primeira-liga"
+
         ],
         "file": "../data/url_paths.json"
     },
     "seasons": {
         "first": [
-            "2016",
-            "2015-2016"
+            "2010",
+            "2010-2011"
         ],
         "last": [
-            "2017",
-            "2016-2017"
+            "2018",
+            "2017-2018"
         ]
     }
 }
