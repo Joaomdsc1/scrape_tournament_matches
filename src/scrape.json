@@ -1,13 +1,11 @@
 {
     "sports": [
-        "football",
-        "basketball"
+        "football"
     ],
     "url_paths": {
         "validate": true,
         "mode": "file",
         "list": [
-            "/football/brazil/serie-a",
             "/football/germany/bundesliga",
             "/football/italy/serie-a",
             "/football/england/premier-league",

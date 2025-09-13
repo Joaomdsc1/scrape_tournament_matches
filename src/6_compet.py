@@ -963,7 +963,7 @@ class CompetitiveBalanceAnalyzer:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             logger.info(f"Gráfico salvo em: {save_path}")
         
-        plt.show()
+        # plt.show()
         
     def get_analysis_result(self) -> AnalysisResult:
         """Retorna um resultado estruturado da análise."""
