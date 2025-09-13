@@ -38,6 +38,7 @@ all_dfs = []
 
 for base_path, path in paths:
     sport = base_path.strip('/').split('/')[0]
+    country = base_path.strip('/').split('/')[1]  # Extrair o país da URL
 
     # Extração do nome da liga conforme aparece na URL (ex: serie-a-betano)
     raw_slug = path.strip('/').split('/')[2].split('-')[0]
@@ -73,6 +74,7 @@ for base_path, path in paths:
             df.insert(0, "season", season)
             df.insert(1, "tournament", tournament_slug)  # valor original da URL
             df.insert(2, "sport", sport)
+            df.insert(3, "country", country)  # Adicionar coluna country
             all_dfs.append(df)
             print(f"Tabela adicionada: {tournament_slug} {season}")
         except Exception as e:
