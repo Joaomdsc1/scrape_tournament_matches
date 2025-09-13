@@ -7,7 +7,6 @@ import re
 
 # Lista de ligas base
 base_paths = [
-    "/football/brazil/serie-a",
     "/football/germany/bundesliga",
     "/football/italy/serie-a",
     "/football/england/premier-league",
