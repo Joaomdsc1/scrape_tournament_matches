@@ -28,6 +28,31 @@ sns.set_palette("husl")
 
 
 @dataclass
+class PositionDefinitionResult:
+    """Classe para armazenar informações sobre quando as posições foram definidas."""
+    champion_round: Optional[int] = None
+    second_round: Optional[int] = None
+    third_round: Optional[int] = None
+    fourth_round: Optional[int] = None
+    relegation_rounds: Optional[Dict[int, int]] = None  # {posição: rodada}
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Converte para dicionário para facilitar exportação."""
+        result = {
+            'Champion Round': self.champion_round,
+            'Second Round': self.second_round,
+            'Third Round': self.third_round,
+            'Fourth Round': self.fourth_round
+        }
+        
+        if self.relegation_rounds:
+            for pos, round_num in self.relegation_rounds.items():
+                result[f'Position {pos} Round'] = round_num
+                
+        return result
+
+
+@dataclass
 class AnalysisResult:
     """Classe para estruturar os resultados da análise."""
     championship_id: str
@@ -46,6 +71,149 @@ class AnalysisResult:
     has_ranking_data: bool = False
     ranking_based_simulation: bool = False
     strength_variance: Optional[float] = None  # Variância das forças dos times
+    position_definitions: Optional[PositionDefinitionResult] = None
+
+
+class PositionDefinitionCalculator:
+    """Classe para calcular em que rodada cada posição foi definida."""
+    
+    def __init__(self, games_df: pd.DataFrame, teams: List[str], total_rounds: int):
+        """
+        Inicializa o calculador de definição de posições.
+        
+        Args:
+            games_df: DataFrame com os jogos do campeonato
+            teams: Lista de times do campeonato
+            total_rounds: Número total de rodadas
+        """
+        self.games_df = games_df
+        self.teams = teams
+        self.total_rounds = total_rounds
+        self.points_progression = self._calculate_points_progression()
+        
+    def _calculate_points_progression(self) -> Dict[str, List[int]]:
+        """Calcula a progressão de pontos de cada time rodada a rodada."""
+        points_progression = {team: [0] for team in self.teams}
+        
+        for round_num in range(1, self.total_rounds + 1):
+            round_games = self.games_df[self.games_df['rodada'] == round_num]
+            
+            # Inicializar pontos da rodada
+            round_points = {team: 0 for team in self.teams}
+            
+            # Processar jogos da rodada
+            for _, game in round_games.iterrows():
+                home_team = game['home']
+                away_team = game['away']
+                home_score = game['goal_home']
+                away_score = game['goal_away']
+                
+                # Atribuir pontos
+                if home_score > away_score:
+                    round_points[home_team] += 3
+                elif home_score < away_score:
+                    round_points[away_team] += 3
+                else:  # Empate
+                    round_points[home_team] += 1
+                    round_points[away_team] += 1
+            
+            # Atualizar progressão
+            for team in self.teams:
+                previous_total = points_progression[team][-1]
+                points_progression[team].append(previous_total + round_points[team])
+        
+        return points_progression
+    
+    def _get_standings_at_round(self, round_num: int) -> List[Tuple[str, int]]:
+        """Retorna a classificação em uma rodada específica."""
+        if round_num < 1 or round_num > self.total_rounds:
+            return []
+        
+        team_points = {}
+        for team in self.teams:
+            team_points[team] = self.points_progression[team][round_num]
+        
+        # Ordenar por pontos (decrescente)
+        return sorted(team_points.items(), key=lambda x: x[1], reverse=True)
+    
+    def _is_position_defined(self, position: int, round_num: int) -> bool:
+        """
+        Verifica se uma posição específica já foi definida em uma rodada.
+        Uma posição está definida quando o time não pode ser ultrapassado por ninguém abaixo
+        E não pode ultrapassar ninguém acima.
+        
+        Args:
+            position: Posição na tabela (1 = campeão, 2 = vice, etc.)
+            round_num: Número da rodada
+            
+        Returns:
+            True se a posição já foi matematicamente definida
+        """
+        if round_num >= self.total_rounds:
+            return True  # Última rodada, todas as posições estão definidas
+        
+        standings = self._get_standings_at_round(round_num)
+        if position > len(standings):
+            return False
+        
+        # Time na posição atual
+        current_team = standings[position - 1][0]
+        current_points = standings[position - 1][1]
+        
+        # Calcular pontos máximos possíveis para os times
+        remaining_rounds = self.total_rounds - round_num
+        max_possible_points = remaining_rounds * 3
+        
+        # 1. Verificar se algum time ABAIXO pode ultrapassar o time atual
+        for i in range(position, len(standings)):
+            team_below = standings[i][0]
+            points_below = standings[i][1]
+            
+            if points_below + max_possible_points > current_points:
+                return False  # Time abaixo pode ultrapassar
+        
+        # 2. Verificar se o time atual pode ultrapassar algum time ACIMA
+        for i in range(position - 1):
+            team_above = standings[i][0]
+            points_above = standings[i][1]
+            
+            if current_points + max_possible_points > points_above:
+                return False  # Time atual pode ultrapassar alguém acima
+        
+        return True
+    
+    def calculate_position_definitions(self) -> PositionDefinitionResult:
+        """Calcula em que rodada cada posição foi definida."""
+        result = PositionDefinitionResult()
+        
+        # Calcular para as primeiras 4 posições
+        for pos in range(1, 5):
+            if pos > len(self.teams):
+                break
+                
+            for round_num in range(1, self.total_rounds + 1):
+                if self._is_position_defined(pos, round_num):
+                    if pos == 1:
+                        result.champion_round = round_num
+                    elif pos == 2:
+                        result.second_round = round_num
+                    elif pos == 3:
+                        result.third_round = round_num
+                    elif pos == 4:
+                        result.fourth_round = round_num
+                    break
+        
+        # Calcular para as últimas 4 posições (rebaixamento)
+        result.relegation_rounds = {}
+        last_positions = list(range(max(1, len(self.teams) - 3), len(self.teams) + 1))
+        
+        for pos in last_positions:
+            for round_num in range(1, self.total_rounds + 1):
+                if self._is_position_defined(pos, round_num):
+                    result.relegation_rounds[pos] = round_num
+                    break
+        
+        return result
 
 
 class RankingProcessor:
@@ -424,6 +592,7 @@ class CompetitiveBalanceAnalyzer:
         self._initialize_championship_info()
         self._load_team_strengths()
         self._reset_results()
+        self._calculate_position_definitions()
         
     def _initialize_championship_info(self):
         """Inicializa informações do campeonato."""
@@ -608,6 +777,20 @@ class CompetitiveBalanceAnalyzer:
 
         # Criar simulador com as forças combinadas
         self.match_simulator = ImprovedMatchSimulator(self.team_strengths)
+    
+    def _calculate_position_definitions(self):
+        """Calcula em que rodada cada posição foi definida."""
+        try:
+            calculator = PositionDefinitionCalculator(
+                games_df=self.season_games,
+                teams=self.teams,
+                total_rounds=self.total_rounds
+            )
+            self.position_definitions = calculator.calculate_position_definitions()
+            logger.info("Cálculo de definição de posições concluído")
+        except Exception as e:
+            logger.error(f"Erro ao calcular definição de posições: {e}")
+            self.position_definitions = None
         
     def _reset_results(self):
         """Reseta variáveis de resultado."""
@@ -908,6 +1091,24 @@ class CompetitiveBalanceAnalyzer:
         info_text += f"  Empate: {self.pd:.3f}\n"
         info_text += f"  Visitante: {self.pa:.3f}\n\n"
         
+        # Adicionar informações de definição de posições
+        if self.position_definitions:
+            info_text += f"DEFINIÇÃO DE POSIÇÕES:\n"
+            if self.position_definitions.champion_round:
+                info_text += f"  Campeão: Rodada {self.position_definitions.champion_round}\n"
+            if self.position_definitions.second_round:
+                info_text += f"  Vice: Rodada {self.position_definitions.second_round}\n"
+            if self.position_definitions.third_round:
+                info_text += f"  3º Lugar: Rodada {self.position_definitions.third_round}\n"
+            if self.position_definitions.fourth_round:
+                info_text += f"  4º Lugar: Rodada {self.position_definitions.fourth_round}\n"
+            
+            if self.position_definitions.relegation_rounds:
+                info_text += f"  Rebaixamento:\n"
+                for pos, round_num in sorted(self.position_definitions.relegation_rounds.items()):
+                    info_text += f"    Posição {pos}: Rodada {round_num}\n"
+            info_text += "\n"
+        
         if self.has_ranking_data:
             info_text += f"DADOS DE RANKING:\n"
             info_text += f"Variância das forças: {self.strength_variance:.4f}\n"
@@ -989,7 +1190,8 @@ class CompetitiveBalanceAnalyzer:
             is_competitive=(tau is None),
             has_ranking_data=self.has_ranking_data,
             ranking_based_simulation=self.has_ranking_data,
-            strength_variance=self.strength_variance
+            strength_variance=self.strength_variance,
+            position_definitions=self.position_definitions
         )
 
 
@@ -1094,7 +1296,8 @@ class MultiLeagueAnalyzer:
         # Converter resultados para DataFrame
         summary_data = []
         for result in self.results:
-            summary_data.append({
+            # Dados básicos
+            row_data = {
                 'ID Campeonato': result.championship_id,
                 'Liga': result.league,
                 'Temporada': result.season,
@@ -1110,7 +1313,32 @@ class MultiLeagueAnalyzer:
                 'P(Empate)': f"{result.pd:.3f}",
                 'P(Fora)': f"{result.pa:.3f}",
                 'Simulação': 'Rankings' if result.ranking_based_simulation else 'Probabilística'
-            })
+            }
+            
+            # Adicionar dados de definição de posições
+            if result.position_definitions:
+                pos_def = result.position_definitions
+                row_data.update({
+                    'Campeão (Rodada)': pos_def.champion_round or 'N/A',
+                    'Vice (Rodada)': pos_def.second_round or 'N/A',
+                    '3º Lugar (Rodada)': pos_def.third_round or 'N/A',
+                    '4º Lugar (Rodada)': pos_def.fourth_round or 'N/A'
+                })
+                
+                # Adicionar rodadas de rebaixamento
+                if pos_def.relegation_rounds:
+                    for pos, round_num in pos_def.relegation_rounds.items():
+                        row_data[f'Posição {pos} (Rodada)'] = round_num
+            else:
+                # Valores padrão se não houver dados
+                row_data.update({
+                    'Campeão (Rodada)': 'N/A',
+                    'Vice (Rodada)': 'N/A',
+                    '3º Lugar (Rodada)': 'N/A',
+                    '4º Lugar (Rodada)': 'N/A'
+                })
+            
+            summary_data.append(row_data)
         
         summary_df = pd.DataFrame(summary_data)
         
