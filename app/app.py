@@ -7,13 +7,13 @@ import plotly.express as px
 # Configuração da página
 st.set_page_config(
     page_title="Análise de Partidas e Classificações",
-    page_icon="⚽🏀",
+    page_icon="⚽",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # Título principal
-st.title("⚽🏀 Análise de Partidas e Classificações")
+st.title("⚽ Análise de Partidas e Classificações")
 
 # Função para calcular classificação
 def calcular_classificacao(dados_partidas):
@@ -138,9 +138,9 @@ def carregar_dados_esporte(esporte):
     try:
         # Tentar diferentes caminhos possíveis
         caminhos_possiveis = [
-            f"../data/formatted/{esporte.lower()}.csv",  # Se executado de src/
-            f"data/formatted/{esporte.lower()}.csv",     # Se executado da raiz
-            f"../../data/formatted/{esporte.lower()}.csv"  # Se executado de app/
+            f"../data/2_formatted/{esporte.lower()}.csv",  # Se executado de src/
+            f"data/2_formatted/{esporte.lower()}.csv",     # Se executado da raiz
+            f"../../data/2_formatted/{esporte.lower()}.csv"  # Se executado de app/
         ]
         
         for caminho in caminhos_possiveis:
