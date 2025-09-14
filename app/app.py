@@ -146,7 +146,7 @@ def carregar_dados_esporte(esporte):
         st.error(f"Erro ao carregar dados do {esporte}: {e}")
         return None
 
-# ===== NOVO CÓDIGO (INÍCIO): Função para carregar dados do sumário =====
+# Informações de competitividade
 @st.cache_data
 def carregar_dados_sumario():
     """Carrega os dados do relatório de análise de competitividade."""
@@ -159,6 +159,26 @@ def carregar_dados_sumario():
         return None
     except Exception as e:
         st.error(f"Erro ao carregar dados do sumário: {e}")
+        return None
+
+@st.cache_data
+def calcular_medias_competitividade(dados_sumario):
+    """Calcula as médias dos valores de competitividade para comparação."""
+    if dados_sumario is None or dados_sumario.empty:
+        return None
+    
+    try:
+        medias = {
+            'variancia_forcas_media': dados_sumario['Variância Forças'].mean(),
+            'desequilibrio_final_media': dados_sumario['Desequilíbrio Final'].mean(),
+            'p_casa_media': dados_sumario['P(Casa)'].mean(),
+            'p_empate_media': dados_sumario['P(Empate)'].mean(),
+            'p_fora_media': dados_sumario['P(Fora)'].mean(),
+            'total_campeonatos': len(dados_sumario)
+        }
+        return medias
+    except Exception as e:
+        st.error(f"Erro ao calcular médias de competitividade: {e}")
         return None
 
 def obter_caminho_imagem_simulacao(id_campeonato):
@@ -187,8 +207,8 @@ def obter_caminho_imagem_simulacao(id_campeonato):
         return None
 
 dados_esporte = carregar_dados_esporte(esporte)
-dados_sumario = carregar_dados_sumario() # Carrega os novos dados
-# ===== NOVO CÓDIGO (FIM) =====
+dados_sumario = carregar_dados_sumario()
+medias_competitividade = calcular_medias_competitividade(dados_sumario) 
 
 if dados_esporte is None:
     st.stop()
@@ -378,7 +398,7 @@ if 'id' in dados_esporte.columns:
                 )
 
                 # ===== INDICADORES DE COMPETITIVIDADE =====
-                if dados_sumario is not None:
+                if dados_sumario is not None and medias_competitividade is not None:
                     info_campeonato = dados_sumario[dados_sumario['ID Campeonato'] == id_selecionado]
                     
                     if not info_campeonato.empty:
@@ -388,6 +408,16 @@ if 'id' in dados_esporte.columns:
                         competitivo_status = info_campeonato.iloc[0]['É Competitivo']
                         variancia = info_campeonato.iloc[0]['Variância Forças']
                         desequilibrio = info_campeonato.iloc[0]['Desequilíbrio Final']
+                        p_casa = info_campeonato.iloc[0]['P(Casa)']
+                        p_empate = info_campeonato.iloc[0]['P(Empate)']
+                        p_fora = info_campeonato.iloc[0]['P(Fora)']
+                        
+                        # Calcular diferenças em relação à média
+                        diff_variancia = variancia - medias_competitividade['variancia_forcas_media']
+                        diff_desequilibrio = desequilibrio - medias_competitividade['desequilibrio_final_media']
+                        diff_p_casa = p_casa - medias_competitividade['p_casa_media']
+                        diff_p_empate = p_empate - medias_competitividade['p_empate_media']
+                        diff_p_fora = p_fora - medias_competitividade['p_fora_media']
                         
                         col1, col2, col3 = st.columns(3)
                         
@@ -401,14 +431,143 @@ if 'id' in dados_esporte.columns:
                             st.metric(
                                 "Variância de Forças",
                                 f"{variancia:.4f}",
+                                delta=f"{diff_variancia:+.4f} vs média ({medias_competitividade['variancia_forcas_media']:.4f})",
                                 help="Mede a dispersão da 'força' dos times. Valores mais baixos indicam maior equilíbrio."
                             )
                         with col3:
                             st.metric(
                                 "Desequilíbrio Final",
                                 f"{desequilibrio:.4f}",
+                                delta=f"{diff_desequilibrio:+.4f} vs média ({medias_competitividade['desequilibrio_final_media']:.4f})",
                                 help="Mede o quão desequilibrada foi a classificação final. Valores mais baixos são mais equilibrados."
                             )
+                        
+                        # Adicionar métricas de probabilidades com comparação
+                        st.markdown("#### 📊 Probabilidades de Resultado")
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.metric(
+                                "Probabilidade Vitória Casa",
+                                f"{p_casa:.3f}",
+                                delta=f"{diff_p_casa:+.3f} vs média ({medias_competitividade['p_casa_media']:.3f})",
+                                help="Probabilidade de vitória do time da casa"
+                            )
+                        with col2:
+                            st.metric(
+                                "Probabilidade Empate",
+                                f"{p_empate:.3f}",
+                                delta=f"{diff_p_empate:+.3f} vs média ({medias_competitividade['p_empate_media']:.3f})",
+                                help="Probabilidade de empate"
+                            )
+                        with col3:
+                            st.metric(
+                                "Probabilidade Vitória Fora",
+                                f"{p_fora:.3f}",
+                                delta=f"{diff_p_fora:+.3f} vs média ({medias_competitividade['p_fora_media']:.3f})",
+                                help="Probabilidade de vitória do time visitante"
+                            )
+                        
+                        # Informação sobre o total de campeonatos analisados
+                        st.info(f"📈 Comparação baseada em {medias_competitividade['total_campeonatos']} campeonatos analisados")
+                        
+                        # ===== DEFINIÇÃO DE POSIÇÕES =====
+                        st.markdown("#### 🏆 Definição de Posições")
+                        
+                        # Verificar se há dados de definição de posições
+                        has_position_data = any(col in info_campeonato.columns for col in ['Campeão (Rodada)', 'Vice (Rodada)', '3º Lugar (Rodada)', '4º Lugar (Rodada)'])
+                        
+                        if has_position_data:
+                            # Seção das 4 primeiras posições
+                            st.markdown("##### 🥇 Primeiras 4 Posições")
+                            col1, col2, col3, col4 = st.columns(4)
+                            
+                            with col1:
+                                champion_round = info_campeonato.iloc[0].get('Campeão (Rodada)', 'N/A')
+                                if champion_round != 'N/A':
+                                    champion_percent = (champion_round / int(info_campeonato.iloc[0]['Rodadas'])) * 100
+                                    st.metric(
+                                        "🏆 Campeão",
+                                        f"Rodada {champion_round}",
+                                        delta=f"{champion_percent:.1f}% da temporada",
+                                        help="Rodada em que o campeão foi matematicamente definido"
+                                    )
+                                else:
+                                    st.metric("🏆 Campeão", "N/A")
+                            
+                            with col2:
+                                vice_round = info_campeonato.iloc[0].get('Vice (Rodada)', 'N/A')
+                                if vice_round != 'N/A':
+                                    vice_percent = (vice_round / int(info_campeonato.iloc[0]['Rodadas'])) * 100
+                                    st.metric(
+                                        "🥈 Vice-Campeão",
+                                        f"Rodada {vice_round}",
+                                        delta=f"{vice_percent:.1f}% da temporada",
+                                        help="Rodada em que o vice-campeão foi matematicamente definido"
+                                    )
+                                else:
+                                    st.metric("🥈 Vice-Campeão", "N/A")
+                            
+                            with col3:
+                                third_round = info_campeonato.iloc[0].get('3º Lugar (Rodada)', 'N/A')
+                                if third_round != 'N/A':
+                                    third_percent = (third_round / int(info_campeonato.iloc[0]['Rodadas'])) * 100
+                                    st.metric(
+                                        "🥉 3º Lugar",
+                                        f"Rodada {third_round}",
+                                        delta=f"{third_percent:.1f}% da temporada",
+                                        help="Rodada em que o 3º lugar foi matematicamente definido"
+                                    )
+                                else:
+                                    st.metric("🥉 3º Lugar", "N/A")
+                            
+                            with col4:
+                                fourth_round = info_campeonato.iloc[0].get('4º Lugar (Rodada)', 'N/A')
+                                if fourth_round != 'N/A':
+                                    fourth_percent = (fourth_round / int(info_campeonato.iloc[0]['Rodadas'])) * 100
+                                    st.metric(
+                                        "🏅 4º Lugar",
+                                        f"Rodada {fourth_round}",
+                                        delta=f"{fourth_percent:.1f}% da temporada",
+                                        help="Rodada em que o 4º lugar foi matematicamente definido"
+                                    )
+                                else:
+                                    st.metric("🏅 4º Lugar", "N/A")
+                            
+                            # Seção das últimas posições (rebaixamento)
+                            st.markdown("##### ⬇️ Últimas Posições (Rebaixamento)")
+                            
+                            # Encontrar colunas de rebaixamento
+                            relegation_cols = [col for col in info_campeonato.columns if col.startswith('Posição ') and col.endswith(' (Rodada)')]
+                            
+                            if relegation_cols:
+                                # Ordenar por posição
+                                relegation_data = []
+                                for col in relegation_cols:
+                                    pos_num = int(col.split(' ')[1])
+                                    round_val = info_campeonato.iloc[0].get(col, 'N/A')
+                                    if round_val != 'N/A':
+                                        relegation_data.append((pos_num, round_val))
+                                
+                                relegation_data.sort(key=lambda x: x[0])
+                                
+                                # Exibir em colunas
+                                num_cols = min(4, len(relegation_data))
+                                if num_cols > 0:
+                                    cols = st.columns(num_cols)
+                                    
+                                    for i, (pos, round_val) in enumerate(relegation_data[:4]):
+                                        with cols[i]:
+                                            if round_val != 'N/A':
+                                                round_percent = (round_val / int(info_campeonato.iloc[0]['Rodadas'])) * 100
+                                                st.metric(
+                                                    f"Posição {pos}",
+                                                    f"Rodada {round_val}",
+                                                    delta=f"{round_percent:.1f}% da temporada",
+                                                    help=f"Rodada em que a posição {pos} foi matematicamente definida"
+                                                )
+                                            else:
+                                                st.metric(f"Posição {pos}", "N/A")
                         
                         # Exibir imagem de simulação se disponível
                         caminho_imagem = obter_caminho_imagem_simulacao(id_selecionado)
