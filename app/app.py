@@ -136,29 +136,59 @@ esporte = st.sidebar.selectbox(
 def carregar_dados_esporte(esporte):
     """Carrega os dados do esporte selecionado"""
     try:
-        # Tentar diferentes caminhos possíveis
-        caminhos_possiveis = [
-            f"../data/2_formatted/{esporte.lower()}.csv",  # Se executado de src/
-            f"data/2_formatted/{esporte.lower()}.csv",     # Se executado da raiz
-            f"../../data/2_formatted/{esporte.lower()}.csv"  # Se executado de app/
-        ]
-        
-        for caminho in caminhos_possiveis:
-            try:
-                dados = pd.read_csv(caminho)
-                return dados
-            except FileNotFoundError:
-                continue
-        
-        # Se nenhum caminho funcionou, mostrar erro
-        st.error(f"Arquivo de dados não encontrado para {esporte}. Caminhos tentados: {caminhos_possiveis}")
+        caminho = f"data/2_formatted/{esporte.lower()}.csv"
+        dados = pd.read_csv(caminho)
+        return dados
+    except FileNotFoundError:
+        st.error(f"Arquivo de dados não encontrado para {esporte} no caminho esperado: {caminho}")
         return None
-        
     except Exception as e:
         st.error(f"Erro ao carregar dados do {esporte}: {e}")
         return None
 
+# ===== NOVO CÓDIGO (INÍCIO): Função para carregar dados do sumário =====
+@st.cache_data
+def carregar_dados_sumario():
+    """Carrega os dados do relatório de análise de competitividade."""
+    try:
+        caminho = "data/6_analysis/summary_report_enhanced.csv"
+        dados = pd.read_csv(caminho)
+        return dados
+    except FileNotFoundError:
+        st.warning(f"Arquivo de sumário não encontrado: {caminho}. As métricas de competitividade não serão exibidas.")
+        return None
+    except Exception as e:
+        st.error(f"Erro ao carregar dados do sumário: {e}")
+        return None
+
+def obter_caminho_imagem_simulacao(id_campeonato):
+    """Mapeia o ID do campeonato para o caminho da imagem de simulação correspondente."""
+    try:
+        # Extrair informações do ID do campeonato
+        if '@' in id_campeonato:
+            liga_part, url_part = id_campeonato.split('@', 1)
+        else:
+            liga_part = id_campeonato
+            url_part = ''
+        
+        # Construir o nome do arquivo baseado no padrão observado
+        # Exemplo: bundesliga@/football/germany/bundesliga-2010-2011/ -> bundesliga__football_germany_bundesliga-2010-2011_.png
+        if url_part:
+            # Remover barras iniciais e finais, substituir barras internas por underscores
+            url_clean = url_part.strip('/').replace('/', '_')
+            nome_arquivo = f"{liga_part}__{url_clean}_.png"
+        else:
+            nome_arquivo = f"{liga_part}_.png"
+        
+        caminho_imagem = f"data/6_analysis/{nome_arquivo}"
+        return caminho_imagem
+    except Exception as e:
+        st.error(f"Erro ao gerar caminho da imagem para {id_campeonato}: {e}")
+        return None
+
 dados_esporte = carregar_dados_esporte(esporte)
+dados_sumario = carregar_dados_sumario() # Carrega os novos dados
+# ===== NOVO CÓDIGO (FIM) =====
 
 if dados_esporte is None:
     st.stop()
@@ -173,12 +203,9 @@ def extrair_info_campeonato(id_campeonato):
             liga_part = id_campeonato
             url_part = ''
         
-        # Limpar nome da liga
         liga_nome = liga_part.replace('-', ' ').title()
         
-        # Extrair temporada da URL
         if url_part:
-            # Procurar por padrões de ano na URL
             anos = re.findall(r'\d{4}', url_part)
             if anos:
                 if len(anos) >= 2:
@@ -199,7 +226,6 @@ def extrair_info_campeonato(id_campeonato):
         st.error(f"Erro ao processar {id_campeonato}: {e}")
         return None
 
-# Processar todos os campeonatos
 if 'id' in dados_esporte.columns:
     campeonatos_disponiveis = dados_esporte['id'].dropna().unique()
     
@@ -212,56 +238,34 @@ if 'id' in dados_esporte.columns:
     df_ligas = pd.DataFrame(campeonatos_info).drop_duplicates()
     
     if not df_ligas.empty:
-        # Seleção de liga na sidebar
         ligas_disponiveis = sorted(df_ligas['liga'].unique())
-        liga_selecionada = st.sidebar.selectbox(
-            '🏆 Selecione a Liga',
-            ligas_disponiveis,
-            help="Escolha a liga para visualizar"
-        )
+        liga_selecionada = st.sidebar.selectbox('🏆 Selecione a Liga', ligas_disponiveis)
         
-        # Filtro de temporada na sidebar
         temporadas_disponiveis = df_ligas[df_ligas['liga'] == liga_selecionada]['temporada'].unique()
         
         if len(temporadas_disponiveis) > 0:
-            temporada_selecionada = st.sidebar.selectbox(
-                '📅 Selecione a Temporada',
-                sorted(temporadas_disponiveis, reverse=True),
-                help="Escolha a temporada para visualizar"
-            )
+            temporada_selecionada = st.sidebar.selectbox('📅 Selecione a Temporada', sorted(temporadas_disponiveis, reverse=True))
             
-            # Obter ID correspondente
             id_selecionado = df_ligas[
                 (df_ligas['liga'] == liga_selecionada) &
                 (df_ligas['temporada'] == temporada_selecionada)
             ]['original_id'].values[0]
             
-            # ===== ÁREA PRINCIPAL =====
             st.header(f"🏆 {liga_selecionada} - {temporada_selecionada}")
-            
-            # Filtros adicionais na sidebar
+
             st.sidebar.markdown("---")
             st.sidebar.subheader("🔍 Filtros")
             
-            # Filtro por data
             dados_filtrados = dados_esporte[dados_esporte['id'] == id_selecionado].copy()
             
             if not dados_filtrados.empty:
-                # Converter datas
                 dados_filtrados['date'] = pd.to_datetime(dados_filtrados['date'], format='%d.%m.%Y', errors='coerce')
                 
-                # Filtro de período
                 if 'date' in dados_filtrados.columns and not dados_filtrados['date'].isna().all():
                     min_date = dados_filtrados['date'].min()
                     max_date = dados_filtrados['date'].max()
                     
-                    periodo = st.sidebar.date_input(
-                        "📅 Período",
-                        value=(min_date, max_date),
-                        min_value=min_date,
-                        max_value=max_date,
-                        help="Selecione o período de datas"
-                    )
+                    periodo = st.sidebar.date_input("📅 Período", value=(min_date, max_date), min_value=min_date, max_value=max_date)
                     
                     if len(periodo) == 2:
                         start_date, end_date = periodo
@@ -270,216 +274,157 @@ if 'id' in dados_esporte.columns:
                             (dados_filtrados['date'] <= pd.Timestamp(end_date))
                         ]
                 
-                # Filtro por time
-                times_disponiveis = sorted(set(
-                    list(dados_filtrados['home'].unique()) + 
-                    list(dados_filtrados['away'].unique())
-                ))
-                
-                time_filtro = st.sidebar.selectbox(
-                    "🏃‍♂️ Filtrar por Time",
-                    ["Todos"] + times_disponiveis,
-                    help="Filtrar partidas por time específico"
-                )
+                times_disponiveis = sorted(set(list(dados_filtrados['home'].unique()) + list(dados_filtrados['away'].unique())))
+                time_filtro = st.sidebar.selectbox("🏃‍♂️ Filtrar por Time", ["Todos"] + times_disponiveis)
                 
                 if time_filtro != "Todos":
-                    dados_filtrados = dados_filtrados[
-                        (dados_filtrados['home'] == time_filtro) |
-                        (dados_filtrados['away'] == time_filtro)
-                    ]
+                    dados_filtrados = dados_filtrados[(dados_filtrados['home'] == time_filtro) | (dados_filtrados['away'] == time_filtro)]
                 
-                # ===== EXIBIÇÃO DOS DADOS =====
-                # Métricas principais
                 col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
                     st.metric("📊 Total de Partidas", len(dados_filtrados))
-                
                 with col2:
                     st.metric("🏟️ Número de Times", len(times_disponiveis))
                 
                 classificacao = calcular_classificacao(dados_filtrados)
                 with col3:
-                    # Get champion team (first place in standings)
                     if not classificacao.empty:
                         campeao = classificacao.iloc[0]['Time']
                         st.metric("🏆 Campeão", campeao)
                     else:
                         st.metric("🏆 Campeão", "Não disponível")
                 
-                # ===== GRÁFICO DE PIZZA =====
                 if 'winner' in dados_filtrados.columns:
                     st.markdown("---")
                     st.subheader("📊 Distribuição de Resultados")
                     
-                    # Calcular estatísticas para o gráfico
                     estatisticas = calcular_estatisticas_gerais(dados_filtrados)
                     
                     if estatisticas and estatisticas['Total'] > 0:
-                        # Criar dados para o gráfico de pizza
                         dados_pizza = {
                             'Resultado': ['Vitórias Casa', 'Empates', 'Vitórias Fora'],
-                            'Quantidade': [
-                                estatisticas['Vitórias Casa'],
-                                estatisticas['Empates'],
-                                estatisticas['Vitórias Fora']
-                            ]
+                            'Quantidade': [estatisticas['Vitórias Casa'], estatisticas['Empates'], estatisticas['Vitórias Fora']]
                         }
-                        
                         df_pizza = pd.DataFrame(dados_pizza)
                         
-                        # Criar gráfico de pizza
                         fig = px.pie(
-                            df_pizza,
-                            values='Quantidade',
-                            names='Resultado',
+                            df_pizza, values='Quantidade', names='Resultado',
                             title='Distribuição de Resultados: Vitórias Casa, Empates e Vitórias Fora',
-                            color_discrete_map={
-                                'Vitórias Casa': '#2E8B57',  # Verde para vitórias casa
-                                'Empates': '#FFD700',        # Dourado para empates
-                                'Vitórias Fora': '#4169E1'   # Azul para vitórias fora
-                            }
+                            color_discrete_map={'Vitórias Casa': '#2E8B57', 'Empates': '#FFD700', 'Vitórias Fora': '#4169E1'}
                         )
+                        fig.update_traces(textposition='inside', textinfo='percent+label', hole=0.3)
+                        fig.update_layout(showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), height=400)
                         
-                        # Personalizar o gráfico
-                        fig.update_traces(
-                            textposition='inside',
-                            textinfo='percent+label',
-                            hole=0.3  # Gráfico de rosca
-                        )
-                        
-                        fig.update_layout(
-                            showlegend=True,
-                            legend=dict(
-                                orientation="h",
-                                yanchor="bottom",
-                                y=1.02,
-                                xanchor="right",
-                                x=1
-                            ),
-                            height=400
-                        )
-                        
-                        # Exibir o gráfico
                         st.plotly_chart(fig, use_container_width=True)
                         
-                        # Exibir estatísticas detalhadas
                         col1, col2, col3 = st.columns(3)
-                        
                         with col1:
                             percentual_vitorias_casa = (estatisticas['Vitórias Casa'] / estatisticas['Total']) * 100
-                            st.metric(
-                                "🏠 Vitórias Casa", 
-                                f"{estatisticas['Vitórias Casa']} ({percentual_vitorias_casa:.1f}%)"
-                            )
-                        
+                            st.metric("🏠 Vitórias Casa", f"{estatisticas['Vitórias Casa']} ({percentual_vitorias_casa:.1f}%)")
                         with col2:
                             percentual_empates = (estatisticas['Empates'] / estatisticas['Total']) * 100
-                            st.metric(
-                                "🤝 Empates", 
-                                f"{estatisticas['Empates']} ({percentual_empates:.1f}%)"
-                            )
-                        
+                            st.metric("🤝 Empates", f"{estatisticas['Empates']} ({percentual_empates:.1f}%)")
                         with col3:
                             percentual_vitorias_fora = (estatisticas['Vitórias Fora'] / estatisticas['Total']) * 100
-                            st.metric(
-                                "✈️ Vitórias Fora", 
-                                f"{estatisticas['Vitórias Fora']} ({percentual_vitorias_fora:.1f}%)"
-                            )
+                            st.metric("✈️ Vitórias Fora", f"{estatisticas['Vitórias Fora']} ({percentual_vitorias_fora:.1f}%)")
                     else:
                         st.warning("⚠️ Não há dados suficientes para gerar o gráfico de distribuição.")
                 
-                # ===== SEÇÃO DE CLASSIFICAÇÃO =====
                 st.markdown("---")
                 st.subheader("🏆 Classificação")
                 
-                # Calcular classificação
-                # # # Está sendo calculado na seção de exibição de dados para poder printar o campeão
-                # classificacao = calcular_classificacao(dados_filtrados)
-                
                 if not classificacao.empty:
-                    # Renomear colunas para melhor visualização
                     colunas_renomeadas = {
-                        'Pos': '🏆 Pos',
-                        'Time': '🏃‍♂️ Time',
-                        'Jogos': '⚽ Jogos',
-                        'Vitórias': '✅ Vitórias',
-                        'Empates': '🤝 Empates',
-                        'Derrotas': '❌ Derrotas',
-                        'Gols Marcados': '⚽ GM',
-                        'Gols Sofridos': '🥅 GS',
-                        'Saldo de Gols': '📊 SG',
-                        'Pontos': '🏅 Pontos'
+                        'Pos': '🏆 Pos', 'Time': '🏃‍♂️ Time', 'Jogos': '⚽ Jogos', 'Vitórias': '✅ Vitórias',
+                        'Empates': '🤝 Empates', 'Derrotas': '❌ Derrotas', 'Gols Marcados': '⚽ GM',
+                        'Gols Sofridos': '🥅 GS', 'Saldo de Gols': '📊 SG', 'Pontos': '🏅 Pontos'
                     }
-                    
                     classificacao_exibicao = classificacao.rename(columns=colunas_renomeadas)
+                    st.dataframe(classificacao_exibicao, hide_index=True, use_container_width=True)
                     
-                    # Exibir classificação
-                    st.dataframe(
-                        classificacao_exibicao,
-                        hide_index=True,
-                        use_container_width=True
-                    )
-                    
-                    # Download da classificação
                     csv_classificacao = classificacao_exibicao.to_csv(index=False)
                     st.download_button(
-                        label="📥 Download da Classificação (CSV)",
-                        data=csv_classificacao,
+                        label="📥 Download da Classificação (CSV)", data=csv_classificacao,
                         file_name=f"classificacao_{liga_selecionada.lower().replace(' ', '_')}_{temporada_selecionada.replace('/', '_')}.csv",
                         mime="text/csv"
                     )
                 else:
                     st.warning("⚠️ Não foi possível calcular a classificação com os dados disponíveis.")
                 
-                # ===== SEÇÃO DE PARTIDAS =====
                 st.markdown("---")
                 st.subheader("Partidas")
                 
-                # Preparar dados para exibição
                 colunas_exibicao = ['date', 'home', 'away', 'result']
+                if 'odds home' in dados_filtrados.columns: colunas_exibicao.append('odds home')
+                if 'odds tie' in dados_filtrados.columns: colunas_exibicao.append('odds tie')
+                if 'odds away' in dados_filtrados.columns: colunas_exibicao.append('odds away')
                 
-                # Adicionar colunas de odds se existirem
-                if 'odds home' in dados_filtrados.columns:
-                    colunas_exibicao.append('odds home')
-                if 'odds tie' in dados_filtrados.columns:
-                    colunas_exibicao.append('odds tie')
-                if 'odds away' in dados_filtrados.columns:
-                    colunas_exibicao.append('odds away')
-                
-                # Renomear colunas para melhor visualização
                 dados_exibicao = dados_filtrados[colunas_exibicao].copy()
                 dados_exibicao['date'] = dados_exibicao['date'].dt.strftime('%d/%m/%Y')
                 
-                # Renomear colunas
                 colunas_renomeadas = {
-                    'date': '📅 Data',
-                    'home': '🏠 Casa',
-                    'away': '✈️ Fora',
-                    'result': '⚽ Resultado',
-                    'odds home': '💰 Odds Casa',
-                    'odds tie': '💰 Odds Empate',
-                    'odds away': '💰 Odds Fora'
+                    'date': '📅 Data', 'home': '🏠 Casa', 'away': '✈️ Fora', 'result': '⚽ Resultado',
+                    'odds home': '💰 Odds Casa', 'odds tie': '💰 Odds Empate', 'odds away': '💰 Odds Fora'
                 }
-                
                 dados_exibicao = dados_exibicao.rename(columns=colunas_renomeadas)
+                st.dataframe(dados_exibicao, hide_index=True, use_container_width=True)
                 
-                # Exibir tabela
-                st.dataframe(
-                    dados_exibicao,
-                    hide_index=True,
-                    use_container_width=True
-                )
-                
-                # Download das partidas
                 csv_partidas = dados_exibicao.to_csv(index=False)
                 st.download_button(
-                    label="📥 Download das Partidas (CSV)",
-                    data=csv_partidas,
+                    label="📥 Download das Partidas (CSV)", data=csv_partidas,
                     file_name=f"partidas_{liga_selecionada.lower().replace(' ', '_')}_{temporada_selecionada.replace('/', '_')}.csv",
                     mime="text/csv"
                 )
-                
+
+                # ===== INDICADORES DE COMPETITIVIDADE =====
+                if dados_sumario is not None:
+                    info_campeonato = dados_sumario[dados_sumario['ID Campeonato'] == id_selecionado]
+                    
+                    if not info_campeonato.empty:
+                        st.markdown("---")
+                        st.subheader("📈 Análise de Competitividade")
+                        
+                        competitivo_status = info_campeonato.iloc[0]['É Competitivo']
+                        variancia = info_campeonato.iloc[0]['Variância Forças']
+                        desequilibrio = info_campeonato.iloc[0]['Desequilíbrio Final']
+                        
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.metric(
+                                "Campeonato Competitivo",
+                                f"{competitivo_status}",
+                                help="Indica se o campeonato foi considerado competitivo com base na análise."
+                            )
+                        with col2:
+                            st.metric(
+                                "Variância de Forças",
+                                f"{variancia:.4f}",
+                                help="Mede a dispersão da 'força' dos times. Valores mais baixos indicam maior equilíbrio."
+                            )
+                        with col3:
+                            st.metric(
+                                "Desequilíbrio Final",
+                                f"{desequilibrio:.4f}",
+                                help="Mede o quão desequilibrada foi a classificação final. Valores mais baixos são mais equilibrados."
+                            )
+                        
+                        # Exibir imagem de simulação se disponível
+                        caminho_imagem = obter_caminho_imagem_simulacao(id_selecionado)
+                        if caminho_imagem:
+                            try:
+                                st.subheader("📊 Simulação de Rankings")
+                                st.image(caminho_imagem, caption=f"Simulação de Rankings - {liga_selecionada} {temporada_selecionada}", use_container_width=True)
+                            except FileNotFoundError:
+                                st.warning(f"⚠️ Imagem de simulação não encontrada: {caminho_imagem}")
+                            except Exception as e:
+                                st.error(f"❌ Erro ao carregar imagem de simulação: {e}")
+                        else:
+                            st.warning("⚠️ Não foi possível determinar o caminho da imagem de simulação.")
+                        
+                        st.markdown("---")
+
             else:
                 st.warning("⚠️ Nenhuma partida encontrada para esta seleção.")
         else:
@@ -489,17 +434,3 @@ if 'id' in dados_esporte.columns:
 else:
     st.error("❌ Coluna 'id' não encontrada nos dados.")
     st.stop()
-
-# ===== FOOTER =====
-st.markdown("---")
-st.markdown(
-    """
-    <div style='text-align: center; color: #666;'>
-        📊 Dashboard de Análise de Partidas e Classificações<br>
-        Desenvolvido para análise de dados esportivos
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-
