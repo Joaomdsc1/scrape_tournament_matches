@@ -136,7 +136,7 @@ esporte = st.sidebar.selectbox(
 def carregar_dados_esporte(esporte):
     """Carrega os dados do esporte selecionado"""
     try:
-        caminho = f"data/2_formatted/{esporte.lower()}.csv"
+        caminho = f"data/5_matchdays/{esporte.lower()}.csv"
         dados = pd.read_csv(caminho)
         return dados
     except FileNotFoundError:
@@ -374,18 +374,25 @@ if 'id' in dados_esporte.columns:
                 
                 st.markdown("---")
                 st.subheader("Partidas")
-                
-                colunas_exibicao = ['date', 'home', 'away', 'result']
+
+                # Adicionada a coluna 'rodada'
+                colunas_exibicao = ['rodada', 'date', 'home', 'away', 'result']
                 if 'odds home' in dados_filtrados.columns: colunas_exibicao.append('odds home')
                 if 'odds tie' in dados_filtrados.columns: colunas_exibicao.append('odds tie')
                 if 'odds away' in dados_filtrados.columns: colunas_exibicao.append('odds away')
-                
+
                 dados_exibicao = dados_filtrados[colunas_exibicao].copy()
                 dados_exibicao['date'] = dados_exibicao['date'].dt.strftime('%d/%m/%Y')
-                
+
                 colunas_renomeadas = {
-                    'date': '📅 Data', 'home': '🏠 Casa', 'away': '✈️ Fora', 'result': '⚽ Resultado',
-                    'odds home': '💰 Odds Casa', 'odds tie': '💰 Odds Empate', 'odds away': '💰 Odds Fora'
+                    'rodada': '🗓️ Rodada',  
+                    'date': '📅 Data', 
+                    'home': '🏠 Casa', 
+                    'away': '✈️ Fora', 
+                    'result': '⚽ Resultado',
+                    'odds home': '💰 Odds Casa', 
+                    'odds tie': '💰 Odds Empate', 
+                    'odds away': '💰 Odds Fora'
                 }
                 dados_exibicao = dados_exibicao.rename(columns=colunas_renomeadas)
                 st.dataframe(dados_exibicao, hide_index=True, use_container_width=True)
