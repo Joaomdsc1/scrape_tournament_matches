@@ -1467,7 +1467,7 @@ class MultiLeagueAnalyzer:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             logger.info(f"Análise comparativa salva em: {save_path}")
         
-        plt.show()
+        # plt.show()
         
         # Estatísticas resumidas
         print(f"\n{'='*60}")
