@@ -14,12 +14,17 @@ logger = logging.getLogger(__name__)
 
 # Lista de ligas base
 base_paths = [
-    "/football/germany/bundesliga",
-    "/football/italy/serie-a",
-    "/football/england/premier-league"
+            "/football/germany/bundesliga",
+            "/football/italy/serie-a",
+            "/football/england/premier-league",
+            "/football/france/ligue-1",
+            "/football/netherlands/eredivisie",
+            "/football/portugal/primeira-liga",
+            "/football/turkey/super-lig",
+            "/football/brazil/serie-a"
 ]
 
-years = range(2010, 2015)
+years = range(2010, 2022)
 
 # Correções apenas para scraping
 slug_corrections = {
