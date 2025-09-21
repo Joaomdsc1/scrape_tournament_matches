@@ -8,8 +8,12 @@
         "list": [
             "/football/germany/bundesliga",
             "/football/italy/serie-a",
-            "/football/england/premier-league"
-
+            "/football/england/premier-league",
+            "/football/france/ligue-1",
+            "/football/netherlands/eredivisie",
+            "/football/portugal/primeira-liga",
+            "/football/turkey/super-lig",
+            "/football/brazil/serie-a"
         ],
         "file": "../data/url_paths.json"
     },
@@ -19,8 +23,8 @@
             "2010-2011"
         ],
         "last": [
-            "2013",
-            "2013-2014"
+            "2021",
+            "2021-2022"
         ]
     }
 }
