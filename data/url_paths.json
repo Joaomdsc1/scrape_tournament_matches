@@ -1,12 +1,44 @@
 {
     "paths": [
-        "/football/germany/bundesliga",
-        "/football/italy/serie-a",
-        "/football/england/premier-league",
-        "/football/france/ligue-1",
-        "/football/netherlands/eredivisie",
-        "/football/portugal/primeira-liga",
-        "/football/turkey/super-lig",
-        "/football/brazil/serie-a"
+        {
+            "base": "/football/germany/bundesliga",
+            "aliases": ["bundesliga", "bundesliga-1", "1.-bundesliga"]
+        },
+        {
+            "base": "/football/italy/serie-a",
+            "aliases": ["serie-a", "serie-a-tim"]
+        },
+        {
+            "base": "/football/england/premier-league",
+            "aliases": ["premier-league", "barclays-premier-league", "english-premier-league"]
+        },
+        {
+            "base": "/football/france/ligue-1",
+            "aliases": ["ligue-1", "ligue-1-uber-eats"]
+        },
+        {
+            "base": "/football/netherlands/eredivisie",
+            "aliases": ["eredivisie"]
+        },
+        {
+            "base": "/football/portugal/primeira-liga",
+            "aliases": ["primeira-liga", "liga-portugal", "liga-nos"]
+        },
+        {
+            "base": "/football/turkey/super-lig",
+            "aliases": ["super-lig", "süper-lig"]
+        },
+        {
+            "base": "/football/brazil/serie-a",
+            "aliases": ["serie-a", "campeonato-brasileiro", "brasileirão", "serie-a-betano"]
+        },
+        {   
+            "base": "/football/spain/laliga",
+            "aliases": ["primera-division", "la-liga", "laliga"]
+        },
+        {
+            "base": "/football/brazil/serie-b",
+            "aliases": ["serie-b-superbet"]
+        }
     ]
 }

@@ -7,23 +7,24 @@ import re
 import time
 import logging
 from io import StringIO
+import json
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Lista de ligas base
-base_paths = [
-            "/football/germany/bundesliga",
-            "/football/italy/serie-a",
-            "/football/england/premier-league",
-            "/football/france/ligue-1",
-            "/football/netherlands/eredivisie",
-            "/football/portugal/primeira-liga",
-            "/football/turkey/super-lig",
-            "/football/brazil/serie-a"
-]
+# Carregar configurações do arquivo scrape.json
+config_path = Path(__file__).parent / "scrape.json"
+with open(config_path, "r", encoding="utf-8") as f:
+    config = json.load(f)
 
+# Obter os caminhos das ligas a partir do scrape.json
+paths_list = config["url_paths"]["list"]
+base_paths = []
+for path_group in paths_list:
+    base_paths.extend(path_group["names"])
+
+# Obter os anos das temporadas
 years = range(2010, 2022)
 
 # Correções apenas para scraping
@@ -193,4 +194,3 @@ if failed_urls:
     logger.info(f"URLs que falharam salvas em: {failed_urls_path}")
 
 logger.info("Scraping concluído!")
- 

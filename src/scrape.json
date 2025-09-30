@@ -6,14 +6,64 @@
         "validate": true,
         "mode": "file",
         "list": [
-            "/football/germany/bundesliga",
-            "/football/italy/serie-a",
-            "/football/england/premier-league",
-            "/football/france/ligue-1",
-            "/football/netherlands/eredivisie",
-            "/football/portugal/primeira-liga",
-            "/football/turkey/super-lig",
-            "/football/brazil/serie-a"
+            {
+            "names": [
+                "/football/germany/bundesliga"
+            ]
+            },
+            {
+            "names": [
+                "/football/italy/serie-a",
+                "/football/italy/serie-a-tim"
+            ]
+            },
+            {
+            "names": [
+                "/football/england/premier-league",
+                "/football/england/barclays-premier-league"
+            ]
+            },
+            {
+            "names": [
+                "/football/france/ligue-1"
+            ]
+            },
+            {
+            "names": [
+                "/football/netherlands/eredivisie"
+            ]
+            },
+            {
+            "names": [
+                "/football/portugal/primeira-liga",
+                "/football/portugal/liga-nos",
+                "/football/portugal/liga-portugal"
+            ]
+            },
+            {
+            "names": [
+                "/football/turkey/super-lig"
+            ]
+            },
+            {
+            "names": [
+                "/football/brazil/serie-a",
+                "/football/brazil/serie-a-betano"
+            ]
+            },
+            {
+                "names":[
+                    "/football/spain/laliga",
+                    "/football/spain/primera-division",
+                    "/football/spain/la-liga"
+                ]
+            },
+            {
+                "names": [
+                    "/football/brazil/serie-b",
+                    "/football/brazil/serie-b-superbet"
+                ]
+            }
         ],
         "file": "../data/url_paths.json"
     },
