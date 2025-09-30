@@ -21,7 +21,13 @@ def scrape() -> None:
     scrape_dir.mkdir(exist_ok=True, parents=True)
 
     paths_params = params["url_paths"]
-    paths = config.parser.get_url_paths(paths_params, sports)
+    paths_list = paths_params["list"]
+
+    # Extract all names from the "list" in scrape.json
+    paths = []
+    for path_group in paths_list:
+        paths.extend(path_group["names"])
+
     unique_paths = sorted(set(paths))
     logging.info(f"Found {len(unique_paths)} unique tournament paths")
 
@@ -52,35 +58,6 @@ def scrape() -> None:
         last_season,
     )
     tm.scrape.save_web_scraped_matches(sport_to_matches, scrape_dir)
-
-    # Scrape standings for current season
-    current_year = datetime.now().year
-    current_season = (str(current_year), f"{current_year-1}/{current_year}")
-    logging.info(f"Scraping standings for current season: {current_season}")
-    
-    standings_paths = []
-    for path in unique_paths:
-        try:
-            paths = tm.scrape.get_path_to_desired_seasons(path, current_season, current_season)
-            if paths:
-                standings_paths.extend(paths)
-                logging.info(f"Found current season path for {path}: {paths[0]}")
-            else:
-                logging.warning(f"No current season found for {path}")
-        except Exception as e:
-            logging.error(f"Error getting current season path for {path}: {e}")
-
-    # Create standings directory and save standings
-    standings_dir = config.path.STANDINGS_PATH
-    standings_dir.mkdir(parents=True, exist_ok=True)
-    logging.info(f"Created standings directory at {standings_dir}")
-    
-    if not standings_paths:
-        logging.error("No current season paths available for standings scraping")
-        return
-        
-    logging.info(f"Starting to scrape standings for {len(standings_paths)} tournaments")
-    tm.scrape.save_standings(standings_paths, standings_dir)
 
 
 if __name__ == "__main__":
