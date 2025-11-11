@@ -63,6 +63,253 @@
                     "/football/brazil/serie-b",
                     "/football/brazil/serie-b-superbet"
                 ]
+            },
+            {
+                "names": [
+                    "/football/germany/2-bundesliga"
+                ]
+            },
+            {
+                "names": [
+                    "/football/germany/3-liga"
+                ]
+            },
+            {
+                "names": [
+                    "/football/italy/serie-b"
+                ]
+            },
+            {
+                "names": [
+                    "/football/england/championship"
+                ]
+            },
+            {
+                "names": [
+                    "/football/england/league-one"
+                ]
+            },
+            {
+                "names": [
+                    "/football/france/ligue-2"
+                ]
+            },
+            {
+                "names": [
+                    "/football/spain/segunda-division",
+                    "/football/spain/laliga2"
+                ]
+            },
+            {
+                "names": [
+                    "/football/belgium/jupiler-league",
+                    "/football/belgium/jupiler-pro-league"
+                ]
+            },
+            {
+                "names": [
+                    "/football/albania/superliga",
+                    "/football/albania/abissnet-superiore"
+                ]
+            },
+            {
+                "names": [
+                    "/football/australia/a-league"
+                ]
+            },
+            {
+                "names": [
+                    "/football/austria/t-mobile-bundesliga",
+                    "/football/austria/tipp3-bundesliga",
+                    "/football/austria/tipico-bundesliga",
+                    "/football/austria/bundesliga"
+                ]
+            },
+            {
+                "names": [
+                    "/football/chile/primera-division"
+                ]
+            },
+            {
+                "names": [
+                    "/football/colombia/liga-postobon",
+                    "/football/colombia/liga-aguila",
+                    "/football/colombia/primera-a"
+                ]
+            },
+            {
+                "names": [
+                    "/football/croatia/1-hnl",
+                    "/football/croatia/hnl"
+                ]
+            },
+            {
+                "names": [
+                    "/football/czech-republic/gambrinus-liga",
+                    "/football/czech-republic/synot-liga",
+                    "/football/czech-republic/1-liga",
+                    "/football/czech-republic/fortuna-liga"
+                ]
+            },
+            {
+                "names": [
+                    "/football/denmark/superliga"
+                ]
+            },
+            {
+                "names": [
+                    "/football/ecuador/serie-a",
+                    "/football/ecuador/liga-pro"
+                ]
+            },
+            {
+                "names": [
+                    "/football/egypt/premier-league"
+                ]
+            },
+            {
+                "names": [
+                    "/football/greece/super-league"
+                ]
+            },
+            {
+                "names": [
+                    "/football/ireland/premier-division"
+                ]
+            },
+            {
+                "names": [
+                    "/football/ivory-coast/ligue-1"
+                ]
+            },
+            {
+                "names": [
+                    "/football/jamaica/premier-league"
+                ]
+            },
+            {
+                "names": [
+                    "/football/japan/j-league",
+                    "/football/japan/j1-league"
+                ]
+            },
+            {
+                "names":[
+                    "/football/japan/j2-league"
+                ]
+            },
+            {
+                "names": [
+                    "/football/mexico/primera-division",
+                    "/football/mexico/liga-mx"
+                ]
+            },
+            {
+                "names":[
+                    "/football/morroco/botola",
+                    "/football/morroco/botola-pro"
+                ]
+            },
+            {
+                "names":[
+                    "/football/morroco/botola-2"
+                ]
+            },
+            {
+                "names": [
+                    "/football/norway/tippeligaen",
+                    "/football/norway/eliteserien"
+                ]
+            },
+            {
+                "names": [
+                    "/football/paraguay/primera-division"
+                ]
+            },
+            {
+                "names": [
+                    "/football/peru/primera-division",
+                    "/football/peru/liga-1"
+                ]
+            },
+            {
+                "names": [
+                    "/football/poland/ekstraklasa"
+                ]
+            },
+            {
+                "names": [
+                    "/football/russia/premier-league"
+                ]
+            },
+            {
+                "names": [
+                    "/football/scotland/premier-league",
+                    "/football/scotland/premiership"
+                ]
+            },
+            {
+                "names": [
+                    "/football/senegal/ligue-1"
+                ]
+            },
+            {
+                "names": [
+                    "/football/serbia/super-liga"
+                ]
+            },
+            {
+                "names": [
+                    "/football/south-africa/premier-league"
+                ]
+            },
+            {
+                "names": [
+                    "/football/south-korea/k-league",
+                    "/football/south-korea/k-league-1",
+                    "/football/south-korea/k-league-classic"
+                ]
+            },
+            {
+                "names": [
+                    "/football/sweden/allsvenskan"
+                ]
+            },
+            {
+                "names": [
+                    "/football/switzerland/super-league"
+                ]
+            },
+            {
+                "names": [
+                    "/football/ukraine/premier-league"
+                ]
+            },
+            {
+                "names": [
+                    "/football/tunisia/ligue-professionnelle-1"
+                ]
+            },
+            {
+                "names": [
+                    "/football/uruguay/primera-division"
+                ]
+            },
+            {
+                "names": [
+                    "/football/usa/mls"
+                ]
+            },
+            {
+                "names": [
+                    "/football/venezuela/primera-division",
+                    "/football/venezuela/liga-futve"
+                ]
+            },
+            {
+                "names": [
+                    "/football/china/super-league"
+                ]
             }
         ],
         "file": "../data/url_paths.json"
@@ -73,8 +320,8 @@
             "2010-2011"
         ],
         "last": [
-            "2021",
-            "2021-2022"
+            "2025",
+            "2025-2026"
         ]
     }
 }

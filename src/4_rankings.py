@@ -25,7 +25,7 @@ for path_group in paths_list:
     base_paths.extend(path_group["names"])
 
 # Obter os anos das temporadas
-years = range(2010, 2022)
+years = range(2010, 2026)
 
 # Correções apenas para scraping
 slug_corrections = {

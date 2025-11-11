@@ -12,6 +12,10 @@ import warnings
 import os
 from scipy import stats
 import itertools
+import pickle
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing as mp
+import gc
 
 warnings.filterwarnings('ignore')
 
@@ -26,6 +30,9 @@ logger = logging.getLogger(__name__)
 plt.style.use('seaborn-v0_8')
 sns.set_palette("husl")
 
+# Configurar caminhos base
+current_dir = Path(__file__).parent
+base_data_dir = current_dir.parent / "data"
 
 @dataclass
 class PositionDefinitionResult:
@@ -72,6 +79,7 @@ class AnalysisResult:
     ranking_based_simulation: bool = False
     strength_variance: Optional[float] = None  # Variância das forças dos times
     position_definitions: Optional[PositionDefinitionResult] = None
+    strength_calculation_method: str = "static"  # "static" ou "dynamic"
 
 
 class PositionDefinitionCalculator:
@@ -216,6 +224,191 @@ class PositionDefinitionCalculator:
         return result
 
 
+class DynamicStrengthCalculator:
+    """Classe para cálculo dinâmico de forças dos times baseado nas últimas partidas."""
+    
+    @staticmethod
+    def calculate_dynamic_strengths(games_df: pd.DataFrame, teams_list: List[str], 
+                                  championship_id: str, current_round: Optional[int] = None) -> Dict[str, float]:
+        """
+        Calcula forças dos times dinamicamente baseado nas últimas X partidas.
+        X = (N-1)*2 onde N é o número de times da liga.
+        
+        Args:
+            games_df: DataFrame com todos os jogos
+            teams_list: Lista de times do campeonato
+            championship_id: ID do campeonato
+            current_round: Rodada atual para cálculo (se None, usa todas as rodadas)
+            
+        Returns:
+            Dicionário com forças normalizadas entre 0 e 1
+        """
+        # Filtrar jogos do campeonato específico
+        champ_games = games_df[games_df['id'] == championship_id].copy()
+        
+        if champ_games.empty:
+            logger.warning(f"Nenhum jogo encontrado para o campeonato {championship_id}")
+            return {team: 0.5 for team in teams_list}
+        
+        # Ordenar por rodada para garantir ordem cronológica
+        champ_games = champ_games.sort_values('rodada')
+        
+        # Se current_round for especificado, filtrar até essa rodada
+        if current_round is not None:
+            champ_games = champ_games[champ_games['rodada'] <= current_round]
+        
+        # Calcular X (número de partidas a considerar)
+        N = len(teams_list)
+        X = (N - 1) * 2  # Fórmula dinâmica
+        logger.info(f"Calculando forças dinâmicas: N={N} times, X={X} partidas, Rodada atual: {current_round}")
+        
+        strengths = {}
+        
+        for team in teams_list:
+            team_strength = DynamicStrengthCalculator._calculate_team_dynamic_strength(
+                champ_games, team, X
+            )
+            strengths[team] = team_strength
+        
+        # Normalizar forças entre 0 e 1
+        strengths = DynamicStrengthCalculator._normalize_strengths(strengths)
+        
+        logger.info(f"Forças dinâmicas calculadas para {len(strengths)} times")
+        logger.info(f"Distribuição - Min: {min(strengths.values()):.3f}, "
+                   f"Max: {max(strengths.values()):.3f}, "
+                   f"Média: {np.mean(list(strengths.values())):.3f}")
+        
+        return strengths
+    
+    @staticmethod
+    def _calculate_team_dynamic_strength(games_df: pd.DataFrame, team: str, lookback_games: int) -> float:
+        """
+        Calcula a força dinâmica de um time baseado nas últimas X partidas.
+        
+        Args:
+            games_df: DataFrame com jogos do campeonato
+            team: Nome do time
+            lookback_games: Número de partidas para lookback
+            
+        Returns:
+            Força do time não normalizada
+        """
+        # Encontrar todas as partidas do time
+        team_games = games_df[
+            (games_df['home'] == team) | (games_df['away'] == team)
+        ].copy()
+        
+        if team_games.empty:
+            logger.warning(f"Nenhuma partida encontrada para o time {team}")
+            return 0.0
+        
+        # Ordenar por rodada (mais recentes primeiro)
+        team_games = team_games.sort_values('rodada', ascending=False)
+        
+        # Pegar as últimas X partidas (ou menos se não houver suficientes)
+        recent_games = team_games.head(lookback_games)
+        
+        if len(recent_games) < lookback_games:
+            logger.debug(f"Time {team} tem apenas {len(recent_games)} partidas disponíveis "
+                        f"(solicitadas: {lookback_games})")
+        
+        if recent_games.empty:
+            return 0.0
+        
+        total_points = 0
+        total_goals_for = 0
+        total_goals_against = 0
+        games_played = 0
+        recent_performance = 0
+        
+        # Peso maior para partidas mais recentes
+        weights = np.linspace(1.0, 0.7, len(recent_games))  # Decrescente
+        
+        for idx, (_, game) in enumerate(recent_games.iterrows()):
+            is_home = game['home'] == team
+            is_away = game['away'] == team
+            
+            if not (is_home or is_away):
+                continue
+            
+            if is_home:
+                goals_for = game['goal_home']
+                goals_against = game['goal_away']
+                home_advantage = 1.1  # Pequeno bônus por jogar em casa
+            else:  # is_away
+                goals_for = game['goal_away']
+                goals_against = game['goal_home']
+                home_advantage = 0.9  # Pequena penalidade por jogar fora
+            
+            # Calcular pontos
+            if goals_for > goals_against:
+                points = 3
+            elif goals_for == goals_against:
+                points = 1
+            else:
+                points = 0
+            
+            # Aplicar peso temporal
+            weight = weights[idx] if idx < len(weights) else 1.0
+            
+            total_points += points * weight
+            total_goals_for += goals_for * weight * home_advantage
+            total_goals_against += goals_against * weight
+            games_played += 1
+        
+        if games_played == 0:
+            return 0.0
+        
+        # Calcular métricas de performance
+        avg_points = total_points / games_played
+        avg_goal_difference = (total_goals_for - total_goals_against) / games_played
+        
+        # Calcular eficiência ofensiva e defensiva
+        offensive_efficiency = total_goals_for / games_played
+        defensive_efficiency = 1.0 / (1.0 + total_goals_against / games_played)  # Inverso dos gols sofridos
+        
+        # Ponderar as métricas
+        strength = (
+            0.4 * (avg_points / 3.0) +  # Pontos (40%)
+            0.2 * ((avg_goal_difference + 3) / 6.0) +  # Saldo de gols (20%)
+            0.2 * offensive_efficiency / 3.0 +  # Eficiência ofensiva (20%)
+            0.2 * defensive_efficiency  # Eficiência defensiva (20%)
+        )
+        
+        return max(0.0, min(1.0, strength))  # Garantir entre 0 e 1
+    
+    @staticmethod
+    def _normalize_strengths(strengths: Dict[str, float]) -> Dict[str, float]:
+        """
+        Normaliza as forças para ficarem entre 0 e 1.
+        
+        Args:
+            strengths: Dicionário com forças não normalizadas
+            
+        Returns:
+            Dicionário com forças normalizadas entre 0 e 1
+        """
+        if not strengths:
+            return strengths
+        
+        values = list(strengths.values())
+        min_val = min(values)
+        max_val = max(values)
+        
+        # Se todos os valores forem iguais, retornar 0.5 para todos
+        if max_val == min_val:
+            return {team: 0.5 for team in strengths.keys()}
+        
+        normalized = {}
+        for team, strength in strengths.items():
+            normalized_strength = (strength - min_val) / (max_val - min_val)
+            # Suavizar para evitar extremos
+            normalized_strength = 0.1 + 0.8 * normalized_strength  # Entre 0.1 e 0.9
+            normalized[team] = normalized_strength
+        
+        return normalized
+
+
 class RankingProcessor:
     """Classe para processar dados de ranking e calcular forças dos times."""
     
@@ -223,79 +416,23 @@ class RankingProcessor:
     def load_rankings(rankings_df: pd.DataFrame, tournament_id: str, season: str) -> Optional[pd.DataFrame]:
         """
         Carrega rankings para um torneio específico e temporada.
-        Agora com busca mais específica para evitar confusão entre ligas diferentes.
         """
         if rankings_df is None or rankings_df.empty:
             logger.warning(f"DataFrame de rankings está vazio ou None")
             return None
             
-        # O tournament_id agora vem do novo método _extract_league_name()
-        # que já extrai apenas o nome da liga (ex: 'bundesliga', 'serie-a')
         base_tournament = tournament_id
         
         logger.info(f"Buscando rankings para torneio: '{tournament_id}' na temporada '{season}'")
         
-        # 1. Tenta a busca exata primeiro
-        # Adaptação especial para "serie-a"
-        if base_tournament.lower() == "serie-a":
-            # Verifica se o formato da temporada é AAAA ou AAAA-AAAA
-            if '-' in season:
-                # AAAA-AAAA: busca por Serie A italiana
-                filtered_rankings = rankings_df[
-                    (rankings_df['tournament'].str.contains("serie-a", case=False, na=False)) &
-                    (rankings_df['season'] == season) &
-                    (rankings_df['tournament'].str.contains('-', na=False))  # Garante que tem hífen (italiana)
-                ].copy()
-            else:
-                # AAAA: busca por Serie A brasileira
-                filtered_rankings = rankings_df[
-                    (rankings_df['tournament'].str.contains("serie-a", case=False, na=False)) &
-                    (rankings_df['season'] == season) &
-                    (~rankings_df['tournament'].str.contains('-', na=False))  # Garante que não tem hífen (brasileira)
-                ].copy()
-        else:
-            # Busca genérica por nome da liga
-            filtered_rankings = rankings_df[
-                (rankings_df['tournament'].str.contains(base_tournament, case=False, na=False)) &
-                (rankings_df['season'] == season)
-            ].copy()
-
-        # 2. Se a busca exata falhar, tenta busca mais específica
-        if filtered_rankings.empty:
-            logger.warning(f"Busca exata falhou para '{base_tournament}' temporada '{season}'. Tentando busca específica...")
-            
-            # Para torneios brasileiros, busca por padrões específicos
-            if 'serie-a' in base_tournament.lower():
-                brazilian_pattern = f"serie-a-{season}"
-                filtered_rankings = rankings_df[
-                    (rankings_df['tournament'].str.contains(brazilian_pattern, case=False, na=False)) &
-                    (rankings_df['season'] == season)
-                ].copy()
-                if not filtered_rankings.empty:
-                    logger.info(f"Encontrados dados brasileiros: '{brazilian_pattern}' para '{base_tournament}'")
-            
-            # Para outros tipos de torneio, busca genérica
-            if filtered_rankings.empty:
-                logger.warning(f"Busca específica falhou. Tentando busca genérica por '{base_tournament}'...")
-                filtered_rankings = rankings_df[
-                    (rankings_df['tournament'].str.contains(base_tournament, case=False, na=False)) &
-                    (rankings_df['season'] == season)
-                ].copy()
-        
-        # 3. Se ainda falhar, tenta uma busca flexível por temporada
-        if filtered_rankings.empty:
-            logger.warning(f"Todas as buscas falharam. Tentando busca flexível por temporada...")
-            
-            # Procura por uma temporada que COMECE com o ano desejado (ex: '2014-2015')
-            season_pattern = f"^{season}" # Usa regex para "começa com"
-            
-            filtered_rankings = rankings_df[
-                (rankings_df['tournament'].str.contains(base_tournament, case=False, na=False)) &
-                (rankings_df['season'].str.match(season_pattern))
-            ].copy()
+        # Busca genérica por nome da liga
+        filtered_rankings = rankings_df[
+            (rankings_df['tournament'].str.contains(base_tournament, case=False, na=False)) &
+            (rankings_df['season'] == season)
+        ].copy()
 
         if filtered_rankings.empty:
-            logger.warning(f"Busca flexível também falhou. Nenhum dado de ranking encontrado para '{base_tournament}' na temporada '{season}' ou similar.")
+            logger.warning(f"Nenhum ranking encontrado para '{base_tournament}' temporada '{season}'")
             return None
             
         logger.info(f"Rankings encontrados para '{base_tournament}' -> '{filtered_rankings['tournament'].iloc[0]}' na temporada '{filtered_rankings['season'].iloc[0]}'.") 
@@ -305,20 +442,13 @@ class RankingProcessor:
     def calculate_team_strengths(rankings_df: pd.DataFrame, teams_list: List[str]) -> Dict[str, float]:
         """
         Calcula forças dos times baseado nos rankings.
-        
-        Args:
-            rankings_df: DataFrame com rankings
-            teams_list: Lista de times do campeonato
-            
-        Returns:
-            Dicionário com forças normalizadas dos times
         """
         strengths = {}
         
-        # Mapear nomes de times (caso haja diferenças de nomenclatura)
+        # Mapear nomes de times
         team_mapping = RankingProcessor._create_team_mapping(rankings_df['Team'].tolist(), teams_list)
         
-        # Calcular força baseada na posição inversa (1º lugar = maior força)
+        # Calcular força baseada na posição inversa
         max_position = len(rankings_df)
         
         for _, row in rankings_df.iterrows():
@@ -326,16 +456,13 @@ class RankingProcessor:
             mapped_name = team_mapping.get(team_name, team_name)
             
             if mapped_name in teams_list:
-                # Usar posição inversa normalizada + pontos normalizados
                 position_strength = (max_position - row.get('#', max_position)) / max_position
                 
-                # Se tiver pontos, usar também
                 if 'Pts' in row and pd.notna(row['Pts']):
                     max_pts = rankings_df['Pts'].max()
                     min_pts = rankings_df['Pts'].min()
                     if max_pts > min_pts:
                         points_strength = (row['Pts'] - min_pts) / (max_pts - min_pts)
-                        # Média ponderada: 60% posição, 40% pontos
                         strength = 0.6 * position_strength + 0.4 * points_strength
                     else:
                         strength = position_strength
@@ -375,7 +502,7 @@ class RankingProcessor:
                 mapping[ranking_team] = ranking_team
                 continue
             
-            # Busca por similaridade (case-insensitive, sem acentos/hifens)
+            # Busca por similaridade
             ranking_clean = RankingProcessor._clean_team_name(ranking_team)
             
             best_match = None
@@ -384,7 +511,6 @@ class RankingProcessor:
             for actual_team in actual_teams:
                 actual_clean = RankingProcessor._clean_team_name(actual_team)
                 
-                # Similaridade simples
                 if ranking_clean in actual_clean or actual_clean in ranking_clean:
                     similarity = min(len(ranking_clean), len(actual_clean)) / max(len(ranking_clean), len(actual_clean))
                     if similarity > best_similarity:
@@ -400,7 +526,6 @@ class RankingProcessor:
     def _clean_team_name(name: str) -> str:
         """Limpa nome do time para comparação."""
         import re
-        # Remove acentos, hifens, espaços extras e converte para minúscula
         clean = re.sub(r'[^\w\s]', '', str(name).lower())
         clean = re.sub(r'\s+', ' ', clean).strip()
         return clean
@@ -411,49 +536,29 @@ class ImprovedMatchSimulator:
     
     def __init__(self, team_strengths: Optional[Dict[str, float]] = None):
         self.team_strengths = team_strengths or {}
-        self.home_advantage = 0.1  # Vantagem de jogar em casa
+        self.home_advantage = 0.1
     
     def calculate_match_probabilities(self, home_team: str, away_team: str, 
                                     global_ph: float, global_pd: float, global_pa: float) -> Tuple[float, float, float]:
         """
         Calcula probabilidades específicas para uma partida baseada nas forças dos times.
-        
-        Args:
-            home_team: Time mandante
-            away_team: Time visitante
-            global_ph, global_pd, global_pa: Probabilidades globais do campeonato
-            
-        Returns:
-            Tupla com (P(casa vence), P(empate), P(visitante vence))
         """
         if not self.team_strengths:
             return global_ph, global_pd, global_pa
         
-        # Obter forças dos times
         home_strength = self.team_strengths.get(home_team, 0.5)
         away_strength = self.team_strengths.get(away_team, 0.5)
         
-        # Aplicar vantagem de casa
         home_strength_adj = min(0.95, home_strength + self.home_advantage)
-        
-        # Calcular diferença de força
         strength_diff = home_strength_adj - away_strength
         
-        # Converter diferença de força em probabilidades
-        # Usar função sigmóide para converter diferença em probabilidade
         def sigmoid(x, sharpness=3):
             return 1 / (1 + np.exp(-sharpness * x))
         
-        # Probabilidade base de vitória do mandante baseada na diferença de força
         base_home_prob = sigmoid(strength_diff)
-        
-        # Ajustar probabilidades mantendo a característica global do campeonato
-        # Interpolar entre probabilidades globais e baseadas em força
-        blend_factor = 0.7  # 70% força dos times, 30% padrão global
+        blend_factor = 0.7
         
         ph_adjusted = blend_factor * base_home_prob + (1 - blend_factor) * global_ph
-        
-        # Para empates e vitórias visitantes, usar interpolação similar
         remaining_prob = 1 - ph_adjusted
         total_global_remaining = global_pd + global_pa
         
@@ -464,7 +569,6 @@ class ImprovedMatchSimulator:
             pd_adjusted = remaining_prob * 0.3
             pa_adjusted = remaining_prob * 0.7
         
-        # Normalizar para garantir que soma = 1
         total = ph_adjusted + pd_adjusted + pa_adjusted
         if total > 0:
             return ph_adjusted/total, pd_adjusted/total, pa_adjusted/total
@@ -475,23 +579,17 @@ class ImprovedMatchSimulator:
                             global_ph: float, global_pd: float, global_pa: float) -> Tuple[int, int]:
         """
         Simula o resultado de uma partida.
-        
-        Returns:
-            Tupla com (gols_casa, gols_visitante)
         """
         ph, pd, pa = self.calculate_match_probabilities(home_team, away_team, global_ph, global_pd, global_pa)
         
         rand = np.random.random()
         
         if rand < ph:
-            # Vitória do mandante
             return np.random.choice([1, 2, 3], p=[0.4, 0.4, 0.2]), np.random.choice([0, 1], p=[0.7, 0.3])
         elif rand < ph + pd:
-            # Empate
             score = np.random.choice([0, 1, 2], p=[0.3, 0.5, 0.2])
             return score, score
         else:
-            # Vitória do visitante
             return np.random.choice([0, 1], p=[0.7, 0.3]), np.random.choice([1, 2, 3], p=[0.4, 0.4, 0.2])
 
 
@@ -503,33 +601,20 @@ class DataValidator:
         """Valida e limpa o DataFrame de entrada."""
         required_columns = ['id', 'rodada', 'home', 'away', 'goal_home', 'goal_away']
         
-        # Verificar colunas obrigatórias
         missing_cols = [col for col in required_columns if col not in df.columns]
         if missing_cols:
             raise ValueError(f"Colunas obrigatórias ausentes: {missing_cols}")
         
-        # Fazer uma cópia para não modificar o original
         df_clean = df.copy()
         
-        # Converter colunas de gols para numérico
         for col in ['goal_home', 'goal_away']:
             df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
         
-        # Converter rodada para inteiro
         df_clean['rodada'] = pd.to_numeric(df_clean['rodada'], errors='coerce')
-        
-        # Remover linhas com dados inválidos
-        initial_rows = len(df_clean)
         df_clean = df_clean.dropna(subset=['goal_home', 'goal_away', 'rodada'])
-        removed_rows = initial_rows - len(df_clean)
         
-        if removed_rows > 0:
-            logger.warning(f"Removidas {removed_rows} linhas com dados inválidos")
-        
-        # Validar valores lógicos
         invalid_goals = df_clean[(df_clean['goal_home'] < 0) | (df_clean['goal_away'] < 0)]
         if not invalid_goals.empty:
-            logger.warning(f"Encontrados {len(invalid_goals)} jogos com gols negativos")
             df_clean = df_clean[(df_clean['goal_home'] >= 0) & (df_clean['goal_away'] >= 0)]
         
         return df_clean
@@ -544,44 +629,41 @@ class DataValidator:
             raise ValueError(f"Colunas obrigatórias ausentes no ranking: {missing_cols}")
         
         df_clean = df.copy()
-        
-        # Converter posição para numérico
         df_clean['#'] = pd.to_numeric(df_clean['#'], errors='coerce')
         
-        # Converter pontos se existir
         if 'Pts' in df_clean.columns:
             df_clean['Pts'] = pd.to_numeric(df_clean['Pts'], errors='coerce')
         
-        # Remover linhas sem posição válida
         df_clean = df_clean.dropna(subset=['#'])
         
         return df_clean
 
 
-class CompetitiveBalanceAnalyzer:
-    """Analisador de equilíbrio competitivo melhorado com rankings."""
+class OptimizedCompetitiveBalanceAnalyzer:
+    """Versão otimizada do analisador com melhorias de performance."""
     
     def __init__(self, games_df: pd.DataFrame, championship_id: str,
                  rankings_df: Optional[pd.DataFrame] = None,
                  alpha: float = 0.05, num_simulations: int = 100,
-                 current_season_weight: float = 0.5):
+                 current_season_weight: float = 0.5,
+                 optimize_simulations: bool = True,
+                 use_vectorization: bool = True,
+                 use_dynamic_strengths: bool = True):
         """
-        Inicializa o analisador de competitividade.
+        Inicializa o analisador de competitividade otimizado.
         
         Args:
-            games_df: DataFrame com jogos validados
-            championship_id: ID único do campeonato
-            rankings_df: DataFrame com dados de ranking (opcional)
-            alpha: Nível de significância
-            num_simulations: Número de simulações Monte Carlo
+            use_dynamic_strengths: Se True, usa forças dinâmicas baseadas nas últimas partidas
         """
         self.alpha = alpha
         self.num_simulations = num_simulations
         self.championship_id = championship_id
         self.rankings_df = rankings_df
         self.current_season_weight = current_season_weight
+        self.optimize_simulations = optimize_simulations
+        self.use_vectorization = use_vectorization
+        self.use_dynamic_strengths = use_dynamic_strengths
         
-        # Filtrar e ordenar jogos do campeonato
         self.season_games = games_df[
             games_df['id'] == championship_id
         ].copy().sort_values(['rodada', 'home'])
@@ -599,7 +681,6 @@ class CompetitiveBalanceAnalyzer:
         self.league = self._extract_league_name()
         self.season = self._extract_season()
         
-        # Obter times únicos
         home_teams = set(self.season_games['home'].unique())
         away_teams = set(self.season_games['away'].unique())
         self.teams = sorted(list(home_teams.union(away_teams)))
@@ -614,29 +695,19 @@ class CompetitiveBalanceAnalyzer:
         """Extrai o nome da liga do ID."""
         try:
             if '@' in self.championship_id and '/' in self.championship_id:
-                # Formato: nome@/football/pais/liga-temporada/
-                # Extrai a parte da liga-temporada (posição 3)
                 path_parts = self.championship_id.split('/')
                 if len(path_parts) > 3:
-                    liga_temporada = path_parts[3]
-                    # Remove a barra final se existir
-                    liga_temporada = liga_temporada.rstrip('/')
-                    # Extrai apenas o nome da liga (sem a temporada)
+                    liga_temporada = path_parts[3].rstrip('/')
                     if '-' in liga_temporada:
-                        # Para casos como "bundesliga-2015-2016", pega apenas "bundesliga"
                         parts = liga_temporada.split('-')
-                        # Procura o primeiro ano para determinar onde termina o nome da liga
                         for i, part in enumerate(parts):
-                            if part.isdigit() and len(part) == 4:  # Encontrou um ano
+                            if part.isdigit() and len(part) == 4:
                                 return '-'.join(parts[:i])
-                        # Se não encontrou ano, retorna tudo
                         return liga_temporada
                     return liga_temporada
                 else:
-                    # Fallback: usa a parte antes do @
                     return self.championship_id.split('@')[0]
             elif '@' in self.championship_id:
-                # Formato antigo: nome@caminho
                 return self.championship_id.split('@')[0]
             else:
                 return self.championship_id
@@ -648,41 +719,28 @@ class CompetitiveBalanceAnalyzer:
         """Extrai a temporada do ID."""
         try:
             if '@' in self.championship_id and '/' in self.championship_id:
-                # Formato: nome@/football/pais/liga-temporada/
-                # Extrai a parte da liga-temporada (posição 3)
                 path_parts = self.championship_id.split('/')
                 if len(path_parts) > 3:
-                    liga_temporada = path_parts[3]
-                    # Remove a barra final se existir
-                    liga_temporada = liga_temporada.rstrip('/')
-                    # Extrai a temporada do final da string
+                    liga_temporada = path_parts[3].rstrip('/')
                     if '-' in liga_temporada:
                         parts = liga_temporada.split('-')
-                        # Procura onde começam os anos
                         for i, part in enumerate(parts):
-                            if part.isdigit() and len(part) == 4:  # Encontrou um ano
-                                # Retorna a temporada (anos encontrados)
+                            if part.isdigit() and len(part) == 4:
                                 season_parts = parts[i:]
-                                # Se tem apenas um ano, retorna só ele
                                 if len(season_parts) == 1:
                                     return season_parts[0]
-                                # Se tem dois anos, retorna no formato YYYY-YYYY
                                 elif len(season_parts) == 2 and season_parts[1].isdigit() and len(season_parts[1]) == 4:
                                     return f"{season_parts[0]}-{season_parts[1]}"
-                                # Se só o primeiro é ano válido, retorna só ele
                                 else:
                                     return season_parts[0]
-                        # Se não encontrou ano nos splits, tenta regex
                         import re
                         year_match = re.search(r'(\d{4}(?:-\d{4})?)', liga_temporada)
                         return year_match.group(1) if year_match else "Temporada Desconhecida"
                     else:
-                        # Sem hífen, pode ser só um ano no final
                         import re
                         year_match = re.search(r'(\d{4})$', liga_temporada)
                         return year_match.group(1) if year_match else "Temporada Desconhecida"
             elif '@' in self.championship_id:
-                # Fallback para formato antigo
                 path_part = self.championship_id.split('@')[1]
                 import re
                 year_match = re.search(r'(\d{4}(?:-\d{4})?)', path_part)
@@ -693,15 +751,41 @@ class CompetitiveBalanceAnalyzer:
             return "Temporada Desconhecida"
     
     def _load_team_strengths(self):
-        """Carrega forças dos times combinando rankings da temporada anterior e atual."""
+        """Carrega forças dos times usando método dinâmico ou rankings."""
         self.team_strengths = {}
         self.has_ranking_data = False
+        self.strength_calculation_method = "static"
         
+        # Usar forças dinâmicas se solicitado
+        if self.use_dynamic_strengths:
+            try:
+                # Usar todos os jogos disponíveis para cálculo dinâmico
+                self.team_strengths = DynamicStrengthCalculator.calculate_dynamic_strengths(
+                    games_df=self.season_games,
+                    teams_list=self.teams,
+                    championship_id=self.championship_id
+                )
+                self.has_ranking_data = True
+                self.strength_calculation_method = "dynamic"
+                logger.info(f"Forças dinâmicas calculadas para {len(self.team_strengths)} times")
+                
+                # Calcular variância das forças
+                if self.team_strengths:
+                    self.strength_variance = np.var(list(self.team_strengths.values()))
+                    logger.info(f"Variância das forças dinâmicas: {self.strength_variance:.4f}")
+                
+                self.match_simulator = ImprovedMatchSimulator(self.team_strengths)
+                return
+                
+            except Exception as e:
+                logger.error(f"Erro ao calcular forças dinâmicas: {e}. Continuando com métodos tradicionais.")
+        
+        # Método tradicional com rankings
         if self.rankings_df is None:
             self.match_simulator = ImprovedMatchSimulator(self.team_strengths)
             return
 
-        # --- 1. Tentar carregar rankings da temporada ANTERIOR ---
+        # Tentar carregar rankings da temporada anterior
         prev_season = self.season
         try:
             if '-' in self.season:
@@ -718,19 +802,15 @@ class CompetitiveBalanceAnalyzer:
         if rankings_prev is not None:
             strengths_prev = RankingProcessor.calculate_team_strengths(rankings_prev, self.teams)
             logger.info(f"Carregadas forças da temporada anterior ({prev_season}) para {len(strengths_prev)} times.")
-        else:
-            logger.warning(f"Não foi possível carregar rankings para a temporada anterior ({prev_season}).")
 
-        # --- 2. Tentar carregar rankings da temporada ATUAL ---
+        # Tentar carregar rankings da temporada atual
         rankings_curr = RankingProcessor.load_rankings(self.rankings_df, self.league, self.season)
         strengths_curr = {}
         if rankings_curr is not None:
             strengths_curr = RankingProcessor.calculate_team_strengths(rankings_curr, self.teams)
             logger.info(f"Carregadas forças da temporada atual ({self.season}) para {len(strengths_curr)} times.")
-        else:
-            logger.warning(f"Não foi possível carregar rankings para a temporada atual ({self.season}).")
 
-        # --- 3. Combinar as forças ---
+        # Combinar as forças
         if not strengths_prev and not strengths_curr:
             logger.warning("Nenhum dado de ranking encontrado. Simulação será probabilística simples.")
             self.match_simulator = ImprovedMatchSimulator(self.team_strengths)
@@ -741,32 +821,29 @@ class CompetitiveBalanceAnalyzer:
         w_prev = 1.0 - w_curr
 
         for team in self.teams:
-            s_prev = strengths_prev.get(team, 0.5)  # Usa 0.5 (neutro) se time não encontrado
+            s_prev = strengths_prev.get(team, 0.5)
             s_curr = strengths_curr.get(team, 0.5)
             
-            # Se um dos rankings não existe, usar o outro com 100% do peso
             if not strengths_prev:
                 final_strength = s_curr
             elif not strengths_curr:
                 final_strength = s_prev
             else:
-                # Média ponderada
                 final_strength = (w_prev * s_prev) + (w_curr * s_curr)
             
             combined_strengths[team] = final_strength
             
         self.team_strengths = combined_strengths
         self.has_ranking_data = True
+        self.strength_calculation_method = "static"
         
-        # --- 4. Normalizar as forças combinadas ---
+        # Normalizar as forças combinadas
         if self.team_strengths:
             mean_val = np.mean(list(self.team_strengths.values()))
             min_val, max_val = min(self.team_strengths.values()), max(self.team_strengths.values())
             
-            # Centralizar em 0.5 e re-escalar para o intervalo [0.1, 0.9]
             if max_val > min_val:
                 for team in self.team_strengths:
-                    # Normaliza para [0, 1] e depois mapeia para [0.1, 0.9]
                     norm_strength = (self.team_strengths[team] - min_val) / (max_val - min_val)
                     self.team_strengths[team] = 0.1 + 0.8 * norm_strength
 
@@ -775,9 +852,8 @@ class CompetitiveBalanceAnalyzer:
         logger.info(f"Forças combinadas de {len(self.team_strengths)} times calculadas (Peso atual: {w_curr*100}%)")
         logger.info(f"Variância final das forças: {self.strength_variance:.4f}")
 
-        # Criar simulador com as forças combinadas
         self.match_simulator = ImprovedMatchSimulator(self.team_strengths)
-    
+        
     def _calculate_position_definitions(self):
         """Calcula em que rodada cada posição foi definida."""
         try:
@@ -799,81 +875,75 @@ class CompetitiveBalanceAnalyzer:
         self.envelope_upper_bound = None
         self.ph = self.pd = self.pa = None
         
-    def _calculate_points_progression(self, games_schedule: pd.DataFrame) -> np.ndarray:
+    def _calculate_points_progression_optimized(self, games_schedule: pd.DataFrame) -> np.ndarray:
         """
-        Calcula a progressão normalizada de pontos rodada a rodada.
-        
-        Args:
-            games_schedule: DataFrame com os jogos
-            
-        Returns:
-            Array com a variância normalizada por rodada
+        Versão otimizada do cálculo de progressão de pontos.
         """
-        points = {team: 0 for team in self.teams}
-        variance_curve = []
+        # Converter para arrays numpy para operações vetorizadas
+        teams_array = np.array(self.teams)
+        team_indices = {team: idx for idx, team in enumerate(self.teams)}
         
+        # Inicializar matriz de pontos
+        points_matrix = np.zeros((len(self.teams), self.total_rounds + 1), dtype=int)
+        
+        # Pré-processar jogos por rodada
         for round_num in range(1, self.total_rounds + 1):
             round_games = games_schedule[games_schedule['rodada'] == round_num]
             
-            # Processar jogos da rodada
+            # Operações vetorizadas
             for _, game in round_games.iterrows():
-                home_team, away_team = game['home'], game['away']
-                home_score, away_score = game['goal_home'], game['goal_away']
+                home_team = game['home']
+                away_team = game['away']
+                home_score = game['goal_home']
+                away_score = game['goal_away']
                 
-                # Atribuir pontos
+                home_idx = team_indices[home_team]
+                away_idx = team_indices[away_team]
+                
                 if home_score > away_score:
-                    points[home_team] += 3
+                    points_matrix[home_idx, round_num] += 3
                 elif home_score < away_score:
-                    points[away_team] += 3
-                else:  # Empate
-                    points[home_team] += 1
-                    points[away_team] += 1
-            
-            # Calcular variância normalizada melhorada
-            points_values = list(points.values())
-            
-            if len(points_values) > 1:
-                variance = np.var(points_values, ddof=0)
-                max_possible_points = round_num * 3
-                
-                # Normalização melhorada considerando distribuição teórica
-                # Em um campeonato perfeitamente equilibrado, a variância seria mínima
-                # Em um campeonato totalmente desequilibrado, alguns times teriam todos os pontos
+                    points_matrix[away_idx, round_num] += 3
+                else:  # empate
+                    points_matrix[home_idx, round_num] += 1
+                    points_matrix[away_idx, round_num] += 1
+        
+        # Acumular pontos
+        points_cumulative = np.cumsum(points_matrix, axis=1)
+        
+        # Calcular variância normalizada rodada a rodada
+        variance_curve = []
+        for round_num in range(1, self.total_rounds + 1):
+            points_round = points_cumulative[:, round_num]
+            if len(points_round) > 1:
+                variance = np.var(points_round, ddof=0)
                 theoretical_max_var = self._calculate_theoretical_max_variance(round_num)
                 normalized_variance = variance / theoretical_max_var if theoretical_max_var > 0 else 0
             else:
                 normalized_variance = 0
-                
             variance_curve.append(normalized_variance)
         
         return np.array(variance_curve)
     
     def _calculate_theoretical_max_variance(self, round_num: int) -> float:
         """Calcula a variância teórica máxima para uma rodada."""
-        max_points = round_num * 3
-        # Cenário de máximo desequilíbrio: um time tem todos os pontos, outros têm zero
-        # Mas isso é irrealista, então usamos uma aproximação mais realista
-        
-        # Distribuição mais realista: alguns times dominantes, outros fracos
         if self.num_teams <= 1:
             return 1.0
         
-        # Aproximação: 20% dos times ficam com 80% dos pontos disponíveis
         dominant_teams = max(1, int(0.2 * self.num_teams))
         weak_teams = self.num_teams - dominant_teams
         
-        total_points = round_num * 3 * self.num_teams // 2  # Total de pontos no campeonato
+        total_points = round_num * 3 * self.num_teams // 2
         points_dominant = int(0.8 * total_points) // dominant_teams
         points_weak = int(0.2 * total_points) // weak_teams if weak_teams > 0 else 0
         
-        # Calcular variância dessa distribuição
         points_dist = [points_dominant] * dominant_teams + [points_weak] * weak_teams
         return np.var(points_dist, ddof=0)
     
     def calculate_observed_imbalance(self):
         """Calcula a curva de desequilíbrio observada."""
         try:
-            self.observed_imbalance_curve = self._calculate_points_progression(self.season_games)
+            self.observed_imbalance_curve = self._calculate_points_progression_optimized(self.season_games)
             logger.info(f"Curva de desequilíbrio calculada: {len(self.observed_imbalance_curve)} rodadas")
         except Exception as e:
             logger.error(f"Erro ao calcular desequilíbrio observado: {e}")
@@ -897,59 +967,97 @@ class CompetitiveBalanceAnalyzer:
         
         logger.info(f"Probabilidades globais - Casa: {self.ph:.3f}, Empate: {self.pd:.3f}, Fora: {self.pa:.3f}")
     
-    def run_null_model(self):
-        """Executa o modelo nulo com simulações Monte Carlo melhoradas."""
-        logger.info("Iniciando modelo nulo...")
+    def run_null_model_optimized(self):
+        """Versão otimizada do modelo nulo."""
+        logger.info("Iniciando modelo nulo otimizado...")
         
         self._calculate_match_probabilities()
-        
-        simulation_type = "baseada em rankings" if self.has_ranking_data else "probabilística simples"
-        logger.info(f"Executando {self.num_simulations} simulações ({simulation_type})...")
-        
-        # Pré-alocar array para melhor performance
-        self.simulation_curves = np.zeros((self.num_simulations, self.total_rounds))
-        
-        # Template do DataFrame para simulações
         template_games = self.season_games[['rodada', 'home', 'away']].copy()
         
+        # Pré-alocar array para resultados
+        self.simulation_curves = np.zeros((self.num_simulations, self.total_rounds))
+        
+        if self.use_vectorization and not self.has_ranking_data:
+            # Versão vetorizada para simulação sem rankings
+            self._run_vectorized_simulations(template_games)
+        else:
+            # Versão com otimizações para simulação com rankings
+            self._run_optimized_rankings_simulations(template_games)
+    
+    def _run_vectorized_simulations(self, template_games: pd.DataFrame):
+        """Executa simulações vetorizadas."""
+        n_games = len(template_games)
+        
         for sim in range(self.num_simulations):
-            if (sim + 1) % (self.num_simulations // 10) == 0:
+            if (sim + 1) % max(1, self.num_simulations // 10) == 0:
                 logger.info(f"Progresso: {sim + 1}/{self.num_simulations}")
             
-            # Criar jogos simulados
+            # Gerar todos os resultados de uma vez
+            random_vals = np.random.random(n_games)
+            home_wins = random_vals < self.ph
+            draws = (random_vals >= self.ph) & (random_vals < self.ph + self.pd)
+            
+            # Criar DataFrame simulado de forma eficiente
+            simulated_games = template_games.copy()
+            simulated_games['goal_home'] = 0
+            simulated_games['goal_away'] = 0
+            
+            # Atribuir resultados de forma vetorizada
+            simulated_games.loc[home_wins, 'goal_home'] = 2
+            simulated_games.loc[home_wins, 'goal_away'] = 0
+            
+            simulated_games.loc[draws, 'goal_home'] = 1
+            simulated_games.loc[draws, 'goal_away'] = 1
+            
+            away_wins = ~(home_wins | draws)
+            simulated_games.loc[away_wins, 'goal_home'] = 0
+            simulated_games.loc[away_wins, 'goal_away'] = 2
+            
+            # Calcular curva
+            sim_curve = self._calculate_points_progression_optimized(simulated_games)
+            self.simulation_curves[sim] = sim_curve
+    
+    def _run_optimized_rankings_simulations(self, template_games: pd.DataFrame):
+        """Versão otimizada para simulações com rankings."""
+        # Cache para probabilidades calculadas
+        probability_cache = {}
+        
+        for sim in range(self.num_simulations):
+            if (sim + 1) % max(1, self.num_simulations // 10) == 0:
+                logger.info(f"Progresso: {sim + 1}/{self.num_simulations}")
+            
             simulated_games = template_games.copy()
             
-            # Simular cada jogo individualmente se temos dados de ranking
-            if self.has_ranking_data:
-                for idx, row in simulated_games.iterrows():
-                    home_goals, away_goals = self.match_simulator.simulate_match_result(
-                        row['home'], row['away'], self.ph, self.pd, self.pa
+            for idx, row in simulated_games.iterrows():
+                home_team, away_team = row['home'], row['away']
+                cache_key = f"{home_team}_{away_team}"
+                
+                if cache_key in probability_cache:
+                    ph, pd, pa = probability_cache[cache_key]
+                else:
+                    ph, pd, pa = self.match_simulator.calculate_match_probabilities(
+                        home_team, away_team, self.ph, self.pd, self.pa
                     )
-                    simulated_games.loc[idx, 'goal_home'] = home_goals
-                    simulated_games.loc[idx, 'goal_away'] = away_goals
-            else:
-                # Simulação probabilística simples (método original)
-                random_vals = np.random.random(len(template_games))
+                    probability_cache[cache_key] = (ph, pd, pa)
                 
-                home_wins_mask = random_vals < self.ph
-                draws_mask = (random_vals >= self.ph) & (random_vals < self.ph + self.pd)
-                away_wins_mask = random_vals >= self.ph + self.pd
+                # Simular resultado
+                rand = np.random.random()
+                if rand < ph:
+                    home_goals = np.random.choice([1, 2, 3], p=[0.4, 0.4, 0.2])
+                    away_goals = np.random.choice([0, 1], p=[0.7, 0.3])
+                elif rand < ph + pd:
+                    goals = np.random.choice([0, 1, 2], p=[0.3, 0.5, 0.2])
+                    home_goals = away_goals = goals
+                else:
+                    home_goals = np.random.choice([0, 1], p=[0.7, 0.3])
+                    away_goals = np.random.choice([1, 2, 3], p=[0.4, 0.4, 0.2])
                 
-                simulated_games.loc[home_wins_mask, 'goal_home'] = 2
-                simulated_games.loc[home_wins_mask, 'goal_away'] = 0
-                
-                simulated_games.loc[draws_mask, 'goal_home'] = 1
-                simulated_games.loc[draws_mask, 'goal_away'] = 1
-                
-                simulated_games.loc[away_wins_mask, 'goal_home'] = 0
-                simulated_games.loc[away_wins_mask, 'goal_away'] = 2
+                simulated_games.loc[idx, 'goal_home'] = home_goals
+                simulated_games.loc[idx, 'goal_away'] = away_goals
             
-            # Calcular curva de desequilíbrio para esta simulação
-            sim_curve = self._calculate_points_progression(simulated_games)
+            sim_curve = self._calculate_points_progression_optimized(simulated_games)
             self.simulation_curves[sim] = sim_curve
-        
-        logger.info("Simulações concluídas!")
-        
+
     def calculate_confidence_envelope(self):
         """Calcula o envelope de confiança."""
         if self.simulation_curves is None:
@@ -962,26 +1070,23 @@ class CompetitiveBalanceAnalyzer:
         )
         
         simulation_type = "com rankings" if self.has_ranking_data else "probabilístico"
-        logger.info(f"Envelope de confiança calculado (α={self.alpha}, {simulation_type})")
+        strength_method = "dinâmico" if self.strength_calculation_method == "dynamic" else "estático"
+        logger.info(f"Envelope de confiança calculado (α={self.alpha}, {simulation_type}, método: {strength_method})")
         
     def find_turning_point(self) -> Tuple[Optional[int], Optional[float]]:
         """Encontra o ponto de virada com critérios mais rigorosos."""
         if self.observed_imbalance_curve is None or self.envelope_upper_bound is None:
             raise ValueError("Execute os cálculos da análise primeiro")
         
-        # Critérios adaptativos baseados no tamanho do campeonato
         min_consecutive_rounds = max(3, int(0.1 * self.total_rounds))
         min_percentage_above = 0.7
         
-        # Se temos dados de ranking, ser mais rigoroso
         if self.has_ranking_data:
             min_percentage_above = 0.75
         
         for round_idx in range(len(self.observed_imbalance_curve) - min_consecutive_rounds):
-            # Verificar se está acima do envelope
             if self.observed_imbalance_curve[round_idx] > self.envelope_upper_bound[round_idx]:
                 
-                # Verificar rodadas consecutivas
                 consecutive_above = 0
                 for i in range(round_idx, min(round_idx + min_consecutive_rounds, len(self.observed_imbalance_curve))):
                     if self.observed_imbalance_curve[i] > self.envelope_upper_bound[i]:
@@ -990,32 +1095,53 @@ class CompetitiveBalanceAnalyzer:
                         break
                 
                 if consecutive_above >= min_consecutive_rounds:
-                    # Verificar percentual das rodadas restantes
                     remaining_rounds = self.observed_imbalance_curve[round_idx:]
                     remaining_envelope = self.envelope_upper_bound[round_idx:]
                     
                     above_envelope = np.sum(remaining_rounds > remaining_envelope)
                     if above_envelope / len(remaining_rounds) >= min_percentage_above:
-                        tau = round_idx + 1  # +1 porque index é 0-based
+                        tau = round_idx + 1
                         tau_percent = tau / self.total_rounds
                         return tau, tau_percent
         
         return None, None
+
+    def save_round_by_round_data(self, save_path: str):
+        """Salva os dados de competitividade rodada a rodada."""
+        if self.observed_imbalance_curve is None or self.envelope_upper_bound is None:
+            raise ValueError("Execute a análise primeiro")
+        
+        # Garantir que o diretório existe
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        
+        round_data = []
+        tau, _ = self.find_turning_point()
+        
+        for round_idx in range(len(self.observed_imbalance_curve)):
+            round_num = round_idx + 1
+            round_data.append({
+                'championship_id': self.championship_id,
+                'rodada': round_num,
+                'observed_imbalance': self.observed_imbalance_curve[round_idx],
+                'envelope_upper': self.envelope_upper_bound[round_idx],
+                'is_turning_point': (tau == round_num)
+            })
+        
+        df_round = pd.DataFrame(round_data)
+        df_round.to_csv(save_path, index=False)
+        logger.info(f"Dados rodada a rodada salvos em: {save_path}")
         
     def plot_results(self, save_path: Optional[str] = None, show_simulations: bool = True):
         """Plota os resultados com melhor visualização."""
         if self.observed_imbalance_curve is None:
             raise ValueError("Execute a análise primeiro")
         
-        # Criar figura maior para acomodar informações adicionais
         fig = plt.figure(figsize=(16, 12))
         gs = fig.add_gridspec(3, 2, height_ratios=[2, 1, 1], width_ratios=[2, 1])
         
-        # Gráfico principal (ocupando 2 colunas na primeira linha)
         ax_main = fig.add_subplot(gs[0, :])
         rounds = np.arange(1, len(self.observed_imbalance_curve) + 1)
         
-        # Envelope de confiança
         if self.envelope_upper_bound is not None:
             ax_main.fill_between(rounds, 0, self.envelope_upper_bound, 
                                alpha=0.3, color='lightblue', 
@@ -1023,7 +1149,6 @@ class CompetitiveBalanceAnalyzer:
             ax_main.plot(rounds, self.envelope_upper_bound, '--', 
                         color='blue', alpha=0.8, linewidth=2)
         
-        # Algumas simulações representativas
         if self.simulation_curves is not None and show_simulations:
             sample_sims = np.random.choice(len(self.simulation_curves), 
                                          min(20, len(self.simulation_curves)), 
@@ -1032,11 +1157,9 @@ class CompetitiveBalanceAnalyzer:
                 ax_main.plot(rounds, self.simulation_curves[i], '-', 
                            alpha=0.1, color='gray', linewidth=0.5)
         
-        # Curva observada
         ax_main.plot(rounds, self.observed_imbalance_curve, 'r-', 
                     linewidth=3, label='Observado', marker='o', markersize=3)
         
-        # Ponto de virada
         tau, tau_percent = self.find_turning_point()
         if tau is not None:
             ax_main.axvline(x=tau, color='red', linestyle=':', alpha=0.7, linewidth=2,
@@ -1045,9 +1168,9 @@ class CompetitiveBalanceAnalyzer:
                         f'Rodada {tau}\n({tau_percent:.1%})', 
                         bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.7))
         
-        # Título com informações sobre o método de simulação
         simulation_method = "com Rankings" if self.has_ranking_data else "Probabilístico"
-        title = f'Análise de Competitividade - {self.league} {self.season}\n(Simulação: {simulation_method})'
+        strength_method = "Dinâmico" if self.strength_calculation_method == "dynamic" else "Estático"
+        title = f'Análise de Competitividade - {self.league} {self.season}\n(Simulação: {simulation_method}, Forças: {strength_method})'
         ax_main.set_title(title, fontsize=14, fontweight='bold')
         
         ax_main.set_xlabel('Rodada', fontsize=12)
@@ -1055,7 +1178,6 @@ class CompetitiveBalanceAnalyzer:
         ax_main.legend(fontsize=10)
         ax_main.grid(True, alpha=0.3)
         
-        # Gráfico de distribuição final (segunda linha, primeira coluna)
         ax_hist = fig.add_subplot(gs[1, 0])
         if self.simulation_curves is not None:
             final_simulated = self.simulation_curves[:, -1]
@@ -1066,7 +1188,6 @@ class CompetitiveBalanceAnalyzer:
             ax_hist.axvline(final_observed, color='red', linestyle='-', linewidth=3,
                            label=f'Observado: {final_observed:.3f}')
             
-            # Percentil da observação
             percentile = (np.sum(final_simulated < final_observed) / len(final_simulated)) * 100
             ax_hist.text(0.05, 0.95, f'Percentil: {percentile:.1f}%',
                         transform=ax_hist.transAxes, verticalalignment='top',
@@ -1078,20 +1199,19 @@ class CompetitiveBalanceAnalyzer:
             ax_hist.legend(fontsize=9)
             ax_hist.grid(True, alpha=0.3)
         
-        # Informações sobre forças dos times (segunda linha, segunda coluna)
         ax_info = fig.add_subplot(gs[1, 1])
         ax_info.axis('off')
         
         info_text = f"INFORMAÇÕES DO CAMPEONATO\n\n"
         info_text += f"Times: {self.num_teams}\n"
         info_text += f"Rodadas: {self.total_rounds}\n"
-        info_text += f"Simulações: {self.num_simulations}\n\n"
+        info_text += f"Simulações: {self.num_simulations}\n"
+        info_text += f"Método Forças: {self.strength_calculation_method.upper()}\n\n"
         info_text += f"Probabilidades Globais:\n"
         info_text += f"  Casa: {self.ph:.3f}\n"
         info_text += f"  Empate: {self.pd:.3f}\n"
         info_text += f"  Visitante: {self.pa:.3f}\n\n"
         
-        # Adicionar informações de definição de posições
         if self.position_definitions:
             info_text += f"DEFINIÇÃO DE POSIÇÕES:\n"
             if self.position_definitions.champion_round:
@@ -1110,11 +1230,11 @@ class CompetitiveBalanceAnalyzer:
             info_text += "\n"
         
         if self.has_ranking_data:
-            info_text += f"DADOS DE RANKING:\n"
+            info_text += f"DADOS DE FORÇAS:\n"
             info_text += f"Variância das forças: {self.strength_variance:.4f}\n"
-            info_text += f"Simulação baseada em rankings\n\n"
+            info_text += f"Método: {self.strength_calculation_method.upper()}\n\n"
         else:
-            info_text += f"SEM DADOS DE RANKING\n"
+            info_text += f"SEM DADOS DE FORÇAS\n"
             info_text += f"Simulação probabilística simples\n\n"
         
         if tau is not None:
@@ -1131,18 +1251,15 @@ class CompetitiveBalanceAnalyzer:
                     verticalalignment='top', fontsize=9, fontfamily='monospace',
                     bbox=dict(boxstyle="round,pad=0.5", facecolor="lightgray", alpha=0.3))
         
-        # Gráfico de forças dos times (terceira linha, ambas colunas)
         if self.has_ranking_data and self.team_strengths:
             ax_strength = fig.add_subplot(gs[2, :])
             
             teams = list(self.team_strengths.keys())
             strengths = list(self.team_strengths.values())
             
-            # Ordenar por força
             sorted_data = sorted(zip(teams, strengths), key=lambda x: x[1], reverse=True)
             teams_sorted, strengths_sorted = zip(*sorted_data)
             
-            # Usar cores diferentes para times fortes e fracos
             colors = ['darkred' if s > 0.7 else 'red' if s > 0.6 else 'orange' if s > 0.4 else 'lightblue' if s > 0.3 else 'blue' 
                      for s in strengths_sorted]
             
@@ -1150,10 +1267,9 @@ class CompetitiveBalanceAnalyzer:
             ax_strength.set_xticks(range(len(teams_sorted)))
             ax_strength.set_xticklabels(teams_sorted, rotation=45, ha='right', fontsize=8)
             ax_strength.set_ylabel('Força do Time', fontsize=10)
-            ax_strength.set_title('Forças dos Times (baseado em rankings anteriores)', fontsize=11)
+            ax_strength.set_title(f'Forças dos Times (método: {self.strength_calculation_method})', fontsize=11)
             ax_strength.grid(True, alpha=0.3, axis='y')
             
-            # Linha da média
             mean_strength = np.mean(strengths_sorted)
             ax_strength.axhline(y=mean_strength, color='black', linestyle='--', alpha=0.5, label=f'Média: {mean_strength:.3f}')
             ax_strength.legend(fontsize=9)
@@ -1161,10 +1277,12 @@ class CompetitiveBalanceAnalyzer:
         plt.tight_layout()
         
         if save_path:
+            # Garantir que o diretório existe
+            Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             logger.info(f"Gráfico salvo em: {save_path}")
         
-        # plt.show()
+        plt.close(fig)
         
     def get_analysis_result(self) -> AnalysisResult:
         """Retorna um resultado estruturado da análise."""
@@ -1191,37 +1309,322 @@ class CompetitiveBalanceAnalyzer:
             has_ranking_data=self.has_ranking_data,
             ranking_based_simulation=self.has_ranking_data,
             strength_variance=self.strength_variance,
-            position_definitions=self.position_definitions
+            position_definitions=self.position_definitions,
+            strength_calculation_method=self.strength_calculation_method
         )
 
 
-class MultiLeagueAnalyzer:
-    """Analisador para múltiplos campeonatos com rankings."""
+class ParallelLeagueAnalyzer:
+    """Versão paralelizada do analisador de ligas."""
     
-    def __init__(self, alpha: float = 0.05, num_simulations: int = 1000,
-                 current_season_weight: float = 0.5):
+    def __init__(self, alpha: float = 0.05, num_simulations: int = 500,
+                 current_season_weight: float = 0.5, max_workers: int = None,
+                 use_dynamic_strengths: bool = True):
         self.alpha = alpha
         self.num_simulations = num_simulations
-        self.results: List[AnalysisResult] = []
         self.current_season_weight = current_season_weight
+        self.max_workers = max_workers or mp.cpu_count()
+        self.use_dynamic_strengths = use_dynamic_strengths
+        
+    def _analyze_single_championship(self, args):
+        """Função auxiliar para análise de um único campeonato."""
+        champ_id, df_clean, df_rankings_clean, output_dir, save_round_data = args
+        
+        try:
+            analyzer = OptimizedCompetitiveBalanceAnalyzer(
+                games_df=df_clean,
+                championship_id=champ_id,
+                rankings_df=df_rankings_clean,
+                alpha=self.alpha,
+                num_simulations=self.num_simulations,
+                current_season_weight=self.current_season_weight,
+                optimize_simulations=True,
+                use_vectorization=True,
+                use_dynamic_strengths=self.use_dynamic_strengths
+            )
+            
+            analyzer.calculate_observed_imbalance()
+            analyzer.run_null_model_optimized()
+            analyzer.calculate_confidence_envelope()
+            
+            # Salvar dados por rodada se solicitado
+            if output_dir and save_round_data:
+                round_filename = f"round_data_{champ_id.replace('/', '_').replace('@', '_')}.csv"
+                round_path = Path(output_dir) / round_filename
+                analyzer.save_round_by_round_data(round_path)
+            
+            result = analyzer.get_analysis_result()
+            logger.info(f"Concluído: {champ_id}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Erro em {champ_id}: {e}")
+            return None
+
+    def analyze_all_leagues_parallel(self, df_jogos: pd.DataFrame, 
+                                   df_rankings: Optional[pd.DataFrame] = None,
+                                   output_dir: Optional[str] = None,
+                                   save_plots: bool = False,
+                                   save_round_data: bool = True,
+                                   chunk_size: int = 10) -> List[AnalysisResult]:
+        """
+        Versão paralelizada da análise de múltiplas ligas.
+        """
+        logger.info("Validando dados...")
+        df_clean = DataValidator.validate_dataframe(df_jogos)
+        
+        df_rankings_clean = None
+        if df_rankings is not None:
+            try:
+                df_rankings_clean = DataValidator.validate_rankings_dataframe(df_rankings)
+            except Exception as e:
+                logger.warning(f"Erro nos rankings: {e}")
+        
+        championship_ids = df_clean['id'].unique()
+        logger.info(f"Analisando {len(championship_ids)} campeonatos com {self.max_workers} processos")
+        
+        # Garantir que o diretório de saída existe
+        if output_dir:
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+        
+        # Preparar argumentos
+        tasks = []
+        for champ_id in championship_ids:
+            tasks.append((champ_id, df_clean, df_rankings_clean, output_dir, save_round_data))
+        
+        # Processar em chunks para evitar sobrecarga de memória
+        results = []
+        for i in range(0, len(tasks), chunk_size):
+            chunk = tasks[i:i + chunk_size]
+            
+            with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+                future_to_champ = {
+                    executor.submit(self._analyze_single_championship, task): task[0] 
+                    for task in chunk
+                }
+                
+                for future in as_completed(future_to_champ):
+                    champ_id = future_to_champ[future]
+                    try:
+                        result = future.result()
+                        if result:
+                            results.append(result)
+                    except Exception as e:
+                        logger.error(f"Falha em {champ_id}: {e}")
+            
+            logger.info(f"Progresso: {min(i + chunk_size, len(tasks))}/{len(tasks)}")
+            
+            # Limpar memória entre chunks
+            gc.collect()
+        
+        return results
+
+
+class BatchLeagueProcessor:
+    """Processador em lotes com checkpoint e retomada de processamento."""
+    
+    def __init__(self, batch_size: int = 20, checkpoint_interval: int = 5,
+                 use_dynamic_strengths: bool = True):
+        self.batch_size = batch_size
+        self.checkpoint_interval = checkpoint_interval
+        self.use_dynamic_strengths = use_dynamic_strengths
+        
+    def process_in_batches(self, df_jogos: pd.DataFrame, 
+                         df_rankings: Optional[pd.DataFrame] = None,
+                         output_dir: Optional[str] = None,
+                         alpha: float = 0.05,
+                         num_simulations: int = 200,
+                         current_season_weight: float = 0.5,
+                         resume: bool = True) -> List[AnalysisResult]:
+        """
+        Processa ligas em lotes com capacidade de retomada.
+        """
+        checkpoint_file = Path(output_dir) / "processing_checkpoint.pkl" if output_dir else None
+        completed_ids = set()
+        results = []
+        
+        # Garantir que o diretório de saída existe
+        if output_dir:
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+        
+        # Tentar retomar processamento anterior
+        if resume and checkpoint_file and checkpoint_file.exists():
+            try:
+                with open(checkpoint_file, 'rb') as f:
+                    checkpoint_data = pickle.load(f)
+                completed_ids = set(checkpoint_data.get('completed_ids', []))
+                results = checkpoint_data.get('results', [])
+                logger.info(f"Retomando processamento: {len(completed_ids)} ligas concluídas")
+            except Exception as e:
+                logger.warning(f"Erro ao carregar checkpoint: {e}")
+        
+        df_clean = DataValidator.validate_dataframe(df_jogos)
+        championship_ids = [cid for cid in df_clean['id'].unique() 
+                          if cid not in completed_ids]
+        
+        total_batches = (len(championship_ids) + self.batch_size - 1) // self.batch_size
+        
+        for batch_idx in range(0, len(championship_ids), self.batch_size):
+            batch_ids = championship_ids[batch_idx:batch_idx + self.batch_size]
+            logger.info(f"Processando lote {batch_idx//self.batch_size + 1}/{total_batches}")
+            
+            batch_results = self._process_batch(
+                batch_ids, df_clean, df_rankings, output_dir,
+                alpha, num_simulations, current_season_weight
+            )
+            results.extend(batch_results)
+            
+            # Atualizar checkpoint
+            completed_ids.update(batch_ids)
+            if checkpoint_file and (batch_idx % (self.checkpoint_interval * self.batch_size) == 0 or 
+                                  batch_idx + self.batch_size >= len(championship_ids)):
+                self._save_checkpoint(checkpoint_file, completed_ids, results)
+            
+            # Limpar memória entre lotes
+            gc.collect()
+        
+        # Limpar checkpoint ao finalizar
+        if checkpoint_file and checkpoint_file.exists():
+            checkpoint_file.unlink()
+            
+        return results
+    
+    def _process_batch(self, batch_ids: List[str], df_clean: pd.DataFrame,
+                     df_rankings: pd.DataFrame, output_dir: str,
+                     alpha: float, num_simulations: int, current_season_weight: float) -> List[AnalysisResult]:
+        """Processa um lote de ligas."""
+        batch_results = []
+        
+        for champ_id in batch_ids:
+            try:
+                analyzer = OptimizedCompetitiveBalanceAnalyzer(
+                    games_df=df_clean,
+                    championship_id=champ_id,
+                    rankings_df=df_rankings,
+                    alpha=alpha,
+                    num_simulations=num_simulations,
+                    current_season_weight=current_season_weight,
+                    optimize_simulations=True,
+                    use_vectorization=True,
+                    use_dynamic_strengths=self.use_dynamic_strengths
+                )
+                
+                analyzer.calculate_observed_imbalance()
+                analyzer.run_null_model_optimized()
+                analyzer.calculate_confidence_envelope()
+                
+                result = analyzer.get_analysis_result()
+                batch_results.append(result)
+                
+                # Salvar dados por rodada
+                if output_dir:
+                    round_filename = f"round_data_{champ_id.replace('/', '_').replace('@', '_')}.csv"
+                    round_path = Path(output_dir) / round_filename
+                    analyzer.save_round_by_round_data(round_path)
+                
+            except Exception as e:
+                logger.error(f"Erro em {champ_id}: {e}")
+                continue
+        
+        return batch_results
+    
+    def _save_checkpoint(self, checkpoint_file: Path, completed_ids: set, results: List[AnalysisResult]):
+        """Salva ponto de controle."""
+        try:
+            # Garantir que o diretório existe
+            checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            checkpoint_data = {
+                'completed_ids': list(completed_ids),
+                'results': [r.__dict__ for r in results]
+            }
+            with open(checkpoint_file, 'wb') as f:
+                pickle.dump(checkpoint_data, f)
+            logger.info(f"Checkpoint salvo: {len(completed_ids)} ligas processadas")
+        except Exception as e:
+            logger.warning(f"Erro ao salvar checkpoint: {e}")
+
+
+class MultiLeagueAnalyzer:
+    """Analisador para múltiplos campeonatos com suporte a paralelização e lotes."""
+    
+    def __init__(self, alpha: float = 0.05, num_simulations: int = 500,
+                 current_season_weight: float = 0.5, max_workers: int = None,
+                 processing_mode: str = "parallel",
+                 use_dynamic_strengths: bool = True):
+        self.alpha = alpha
+        self.num_simulations = num_simulations
+        self.current_season_weight = current_season_weight
+        self.max_workers = max_workers or mp.cpu_count()
+        self.processing_mode = processing_mode
+        self.use_dynamic_strengths = use_dynamic_strengths
+        self.results: List[AnalysisResult] = []
         
     def analyze_all_leagues(self, df_jogos: pd.DataFrame, 
                           df_rankings: Optional[pd.DataFrame] = None,
                           output_dir: Optional[str] = None,
-                          save_plots: bool = False) -> List[AnalysisResult]:
+                          save_plots: bool = False,
+                          save_round_data: bool = True,
+                          batch_size: int = 10,
+                          resume: bool = True) -> List[AnalysisResult]:
         """
-        Executa análise para todos os campeonatos.
+        Executa análise para todos os campeonatos usando o modo selecionado.
+        """
+        logger.info(f"Iniciando análise no modo: {self.processing_mode}")
+        logger.info(f"Usando forças dinâmicas: {self.use_dynamic_strengths}")
         
-        Args:
-            df_jogos: DataFrame com todos os jogos
-            df_rankings: DataFrame com rankings (opcional)
-            output_dir: Diretório para salvar resultados
-            save_plots: Se deve salvar os gráficos
+        # Garantir que o diretório de saída existe
+        if output_dir:
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+        
+        if self.processing_mode == "parallel":
+            parallel_analyzer = ParallelLeagueAnalyzer(
+                alpha=self.alpha,
+                num_simulations=self.num_simulations,
+                current_season_weight=self.current_season_weight,
+                max_workers=self.max_workers,
+                use_dynamic_strengths=self.use_dynamic_strengths
+            )
+            self.results = parallel_analyzer.analyze_all_leagues_parallel(
+                df_jogos=df_jogos,
+                df_rankings=df_rankings,
+                output_dir=output_dir,
+                save_round_data=save_round_data,
+                chunk_size=batch_size
+            )
             
-        Returns:
-            Lista com os resultados de todos os campeonatos
-        """
-        # Validar dados
+        elif self.processing_mode == "batch":
+            batch_processor = BatchLeagueProcessor(
+                batch_size=batch_size,
+                use_dynamic_strengths=self.use_dynamic_strengths
+            )
+            self.results = batch_processor.process_in_batches(
+                df_jogos=df_jogos,
+                df_rankings=df_rankings,
+                output_dir=output_dir,
+                alpha=self.alpha,
+                num_simulations=self.num_simulations,
+                current_season_weight=self.current_season_weight,
+                resume=resume
+            )
+            
+        else:  # sequential (modo original)
+            self.results = self._analyze_sequential(
+                df_jogos, df_rankings, output_dir, save_plots, save_round_data
+            )
+        
+        # Gerar plots sequencialmente se solicitado
+        if save_plots and output_dir:
+            self._generate_plots_sequential(output_dir)
+        
+        return self.results
+    
+    def _analyze_sequential(self, df_jogos: pd.DataFrame, 
+                          df_rankings: Optional[pd.DataFrame] = None,
+                          output_dir: Optional[str] = None,
+                          save_plots: bool = False,
+                          save_round_data: bool = True) -> List[AnalysisResult]:
+        """Modo sequencial original."""
         logger.info("Validando dados de entrada...")
         df_clean = DataValidator.validate_dataframe(df_jogos)
         
@@ -1233,14 +1636,13 @@ class MultiLeagueAnalyzer:
             except Exception as e:
                 logger.warning(f"Erro ao validar rankings: {e}. Continuando sem rankings.")
         
-        # Obter IDs únicos
         championship_ids = df_clean['id'].unique()
         logger.info(f"Analisando {len(championship_ids)} campeonatos")
         
         self.results = []
+        all_round_data = []
         
-        # Criar diretório de saída se necessário
-        if output_dir and save_plots:
+        if output_dir:
             Path(output_dir).mkdir(parents=True, exist_ok=True)
         
         for i, champ_id in enumerate(championship_ids, 1):
@@ -1249,34 +1651,40 @@ class MultiLeagueAnalyzer:
             logger.info(f"{'='*60}")
             
             try:
-                analyzer = CompetitiveBalanceAnalyzer(
+                analyzer = OptimizedCompetitiveBalanceAnalyzer(
                     games_df=df_clean,
                     championship_id=champ_id,
                     rankings_df=df_rankings_clean,
                     alpha=self.alpha,
                     num_simulations=self.num_simulations,
-                    current_season_weight=self.current_season_weight
+                    current_season_weight=self.current_season_weight,
+                    optimize_simulations=True,
+                    use_vectorization=True,
+                    use_dynamic_strengths=self.use_dynamic_strengths
                 )
                 
-                # Executar análise completa
                 analyzer.calculate_observed_imbalance()
-                analyzer.run_null_model()
+                analyzer.run_null_model_optimized()
                 analyzer.calculate_confidence_envelope()
                 
-                # Plotar resultados
-                save_path = None
+                if output_dir and save_round_data:
+                    round_filename = f"round_data_{champ_id.replace('/', '_').replace('@', '_')}.csv"
+                    round_path = Path(output_dir) / round_filename
+                    analyzer.save_round_by_round_data(round_path)
+                    
+                    round_df = pd.read_csv(round_path)
+                    all_round_data.append(round_df)
+                
                 if output_dir and save_plots:
                     filename = f"{champ_id.replace('/', '_').replace('@', '_')}.png"
                     save_path = Path(output_dir) / filename
+                    analyzer.plot_results(save_path=save_path)
                 
-                analyzer.plot_results(save_path=save_path)
-                
-                # Guardar resultado
                 result = analyzer.get_analysis_result()
                 self.results.append(result)
                 
-                # Log do resultado
-                ranking_info = " (com rankings)" if result.has_ranking_data else " (sem rankings)"
+                strength_method = "dinâmicas" if result.strength_calculation_method == "dynamic" else "estáticas"
+                ranking_info = f" (com {strength_method})" if result.has_ranking_data else " (sem rankings)"
                 if result.turning_point_round:
                     logger.info(f"Ponto de virada detectado na rodada {result.turning_point_round}{ranking_info}")
                 else:
@@ -1286,17 +1694,51 @@ class MultiLeagueAnalyzer:
                 logger.error(f"ERRO ao analisar {champ_id}: {e}")
                 continue
         
+        if output_dir and save_round_data and all_round_data:
+            consolidated_round_data = pd.concat(all_round_data, ignore_index=True)
+            consolidated_path = Path(output_dir) / "round_by_round_competitiveness.csv"
+            consolidated_round_data.to_csv(consolidated_path, index=False)
+            logger.info(f"Dados consolidados de competitividade rodada a rodada salvos em: {consolidated_path}")
+        
         return self.results
+    
+    def _generate_plots_sequential(self, output_dir: str):
+        """Gera plots sequencialmente após análise paralela."""
+        logger.info("Gerando plots sequencialmente...")
+        
+        for result in self.results:
+            try:
+                # Recriar analyzer para gerar plot
+                # Nota: Isso é ineficiente, mas necessário para gerar plots
+                analyzer = OptimizedCompetitiveBalanceAnalyzer(
+                    games_df=pd.DataFrame(),  # Será substituído
+                    championship_id=result.championship_id,
+                    rankings_df=None,
+                    alpha=self.alpha,
+                    num_simulations=50,  # Reduzido para plots
+                    current_season_weight=self.current_season_weight,
+                    use_dynamic_strengths=(result.strength_calculation_method == "dynamic")
+                )
+                
+                # Aqui precisaríamos recarregar os dados para gerar o plot
+                # Por simplicidade, pulamos os plots no modo paralelo
+                logger.warning("Geração de plots não suportada em modo paralelo")
+                break
+                
+            except Exception as e:
+                logger.error(f"Erro ao gerar plot para {result.championship_id}: {e}")
     
     def generate_summary_report(self, save_path: Optional[str] = None) -> pd.DataFrame:
         """Gera relatório resumo de todos os resultados."""
         if not self.results:
             raise ValueError("Nenhuma análise foi executada ainda")
         
-        # Converter resultados para DataFrame
+        # Garantir que o diretório existe
+        if save_path:
+            Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        
         summary_data = []
         for result in self.results:
-            # Dados básicos
             row_data = {
                 'ID Campeonato': result.championship_id,
                 'Liga': result.league,
@@ -1304,6 +1746,7 @@ class MultiLeagueAnalyzer:
                 'Times': result.num_teams,
                 'Rodadas': result.total_rounds,
                 'Tem Rankings': 'Sim' if result.has_ranking_data else 'Não',
+                'Método Forças': result.strength_calculation_method,
                 'Variância Forças': f"{result.strength_variance:.4f}" if result.strength_variance else 'N/A',
                 'Ponto Virada (Rodada)': result.turning_point_round or 'N/A',
                 'Ponto Virada (%)': f"{result.turning_point_percent:.1%}" if result.turning_point_percent else 'N/A',
@@ -1315,7 +1758,6 @@ class MultiLeagueAnalyzer:
                 'Simulação': 'Rankings' if result.ranking_based_simulation else 'Probabilística'
             }
             
-            # Adicionar dados de definição de posições
             if result.position_definitions:
                 pos_def = result.position_definitions
                 row_data.update({
@@ -1325,12 +1767,10 @@ class MultiLeagueAnalyzer:
                     '4º Lugar (Rodada)': pos_def.fourth_round or 'N/A'
                 })
                 
-                # Adicionar rodadas de rebaixamento
                 if pos_def.relegation_rounds:
                     for pos, round_num in pos_def.relegation_rounds.items():
                         row_data[f'Posição {pos} (Rodada)'] = round_num
             else:
-                # Valores padrão se não houver dados
                 row_data.update({
                     'Campeão (Rodada)': 'N/A',
                     'Vice (Rodada)': 'N/A',
@@ -1347,227 +1787,96 @@ class MultiLeagueAnalyzer:
             logger.info(f"Relatório resumo salvo em: {save_path}")
         
         return summary_df
-    
-    def plot_comparative_analysis(self, save_path: Optional[str] = None):
-        """Cria visualizações comparativas melhoradas."""
-        if not self.results:
-            raise ValueError("Nenhuma análise foi executada ainda")
-        
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(18, 14))
-        
-        # Separar resultados por tipo de simulação
-        with_rankings = [r for r in self.results if r.has_ranking_data]
-        without_rankings = [r for r in self.results if not r.has_ranking_data]
-        
-        # 1. Comparação de competitividade por tipo de simulação
-        def count_competitive(results_list):
-            return sum(1 for r in results_list if r.is_competitive)
-        
-        categories = []
-        competitive_counts = []
-        total_counts = []
-        
-        if with_rankings:
-            categories.append('Com Rankings')
-            competitive_counts.append(count_competitive(with_rankings))
-            total_counts.append(len(with_rankings))
-        
-        if without_rankings:
-            categories.append('Sem Rankings')
-            competitive_counts.append(count_competitive(without_rankings))
-            total_counts.append(len(without_rankings))
-        
-        non_competitive_counts = [total - comp for total, comp in zip(total_counts, competitive_counts)]
-        
-        x = np.arange(len(categories))
-        width = 0.35
-        
-        bars1 = ax1.bar(x - width/2, competitive_counts, width, label='Competitivos', color='lightgreen', alpha=0.8)
-        bars2 = ax1.bar(x + width/2, non_competitive_counts, width, label='Não Competitivos', color='lightcoral', alpha=0.8)
-        
-        ax1.set_xlabel('Tipo de Análise')
-        ax1.set_ylabel('Número de Campeonatos')
-        ax1.set_title('Competitividade por Tipo de Simulação')
-        ax1.set_xticks(x)
-        ax1.set_xticklabels(categories)
-        ax1.legend()
-        
-        # Adicionar valores nas barras
-        for bars in [bars1, bars2]:
-            for bar in bars:
-                height = bar.get_height()
-                ax1.annotate(f'{int(height)}',
-                           xy=(bar.get_x() + bar.get_width() / 2, height),
-                           xytext=(0, 3), textcoords="offset points",
-                           ha='center', va='bottom')
-        
-        # 2. Relação entre variância de forças e competitividade
-        if with_rankings:
-            strength_variances = [r.strength_variance for r in with_rankings if r.strength_variance is not None]
-            is_competitive = [r.is_competitive for r in with_rankings if r.strength_variance is not None]
-            
-            colors = ['green' if comp else 'red' for comp in is_competitive]
-            ax2.scatter(strength_variances, [1 if comp else 0 for comp in is_competitive], 
-                       c=colors, alpha=0.6, s=60)
-            ax2.set_xlabel('Variância das Forças dos Times')
-            ax2.set_ylabel('Competitivo (1) / Não Competitivo (0)')
-            ax2.set_title('Variância das Forças vs Competitividade')
-            ax2.set_yticks([0, 1])
-            ax2.set_yticklabels(['Não Competitivo', 'Competitivo'])
-            ax2.grid(True, alpha=0.3)
-        else:
-            ax2.text(0.5, 0.5, 'Sem dados de ranking\npara análise', 
-                    transform=ax2.transAxes, ha='center', va='center')
-            ax2.set_title('Variância das Forças vs Competitividade')
-        
-        # 3. Distribuição dos pontos de virada
-        turning_points_with = [r.turning_point_percent for r in with_rankings if r.turning_point_percent is not None]
-        turning_points_without = [r.turning_point_percent for r in without_rankings if r.turning_point_percent is not None]
-        
-        bins = np.linspace(0, 1, 11)
-        
-        if turning_points_with:
-            ax3.hist(turning_points_with, bins=bins, alpha=0.7, color='orange', 
-                    label=f'Com Rankings ({len(turning_points_with)})', density=True)
-        if turning_points_without:
-            ax3.hist(turning_points_without, bins=bins, alpha=0.7, color='skyblue', 
-                    label=f'Sem Rankings ({len(turning_points_without)})', density=True)
-        
-        ax3.set_xlabel('Ponto de Virada (% da temporada)')
-        ax3.set_ylabel('Densidade')
-        ax3.set_title('Distribuição dos Pontos de Virada')
-        ax3.legend()
-        ax3.grid(True, alpha=0.3)
-        
-        # 4. Desequilíbrio final por número de times
-        teams_counts = [r.num_teams for r in self.results]
-        final_imbalances = [r.final_imbalance for r in self.results if r.final_imbalance is not None]
-        has_rankings = [r.has_ranking_data for r in self.results if r.final_imbalance is not None]
-        
-        colors = ['orange' if has_rank else 'skyblue' for has_rank in has_rankings]
-        shapes = ['o' if has_rank else '^' for has_rank in has_rankings]
-        
-        for i, (teams, imbalance, has_rank) in enumerate(zip(teams_counts[:len(final_imbalances)], final_imbalances, has_rankings)):
-            ax4.scatter(teams, imbalance, c=colors[i], marker=shapes[i], s=50, alpha=0.7)
-        
-        ax4.set_xlabel('Número de Times')
-        ax4.set_ylabel('Desequilíbrio Final')
-        ax4.set_title('Desequilíbrio Final vs Número de Times')
-        ax4.grid(True, alpha=0.3)
-        
-        # Legenda personalizada
-        import matplotlib.patches as mpatches
-        orange_patch = mpatches.Patch(color='orange', label='Com Rankings')
-        blue_patch = mpatches.Patch(color='skyblue', label='Sem Rankings')
-        ax4.legend(handles=[orange_patch, blue_patch])
-        
-        plt.tight_layout()
-        
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            logger.info(f"Análise comparativa salva em: {save_path}")
-        
-        # plt.show()
-        
-        # Estatísticas resumidas
-        print(f"\n{'='*60}")
-        print("ESTATÍSTICAS COMPARATIVAS")
-        print(f"{'='*60}")
-        
-        if with_rankings:
-            comp_rate_with = count_competitive(with_rankings) / len(with_rankings) * 100
-            print(f"Campeonatos com rankings: {len(with_rankings)}")
-            print(f"  Taxa de competitividade: {comp_rate_with:.1f}%")
-            
-            if strength_variances:
-                print(f"  Variância média das forças: {np.mean(strength_variances):.4f}")
-        
-        if without_rankings:
-            comp_rate_without = count_competitive(without_rankings) / len(without_rankings) * 100
-            print(f"Campeonatos sem rankings: {len(without_rankings)}")
-            print(f"  Taxa de competitividade: {comp_rate_without:.1f}%")
 
 
-def main():
+def main_optimized():
+    """Função principal otimizada com paralelização e processamento em lotes."""
     try:
         # Configurações
-        GAMES_CSV_PATH = '../data/5_matchdays/football.csv'
-        RANKINGS_CSV_PATH = '../data/4_standings/standings.csv'  
-        OUTPUT_DIR = '../data/6_analysis'
-        ALPHA = 0.05
-        NUM_SIMULATIONS = 100
-        CURRENT_SEASON_WEIGHT = 0.5
+        GAMES_CSV_PATH = base_data_dir / "5_matchdays/football.csv"
+        RANKINGS_CSV_PATH = base_data_dir / "4_standings/standings.csv"  
+        OUTPUT_DIR = base_data_dir / "6_analysis_optimized"
         
-        # Verificar arquivos
-        if not Path(GAMES_CSV_PATH).exists():
+        # Parâmetros de performance
+        ALPHA = 0.05
+        NUM_SIMULATIONS = 300
+        CURRENT_SEASON_WEIGHT = 0.5
+        PROCESSING_MODE = "parallel"
+        BATCH_SIZE = 10
+        MAX_WORKERS = mp.cpu_count() - 1
+        USE_DYNAMIC_STRENGTHS = True  # Ativar forças dinâmicas
+        
+        if not GAMES_CSV_PATH.exists():
             raise FileNotFoundError(f"Arquivo de jogos não encontrado: {GAMES_CSV_PATH}")
         
-        # Carregar dados de jogos
         logger.info(f"Carregando jogos de: {GAMES_CSV_PATH}")
         df_jogos = pd.read_csv(GAMES_CSV_PATH)
         logger.info(f"Jogos carregados: {len(df_jogos)} registros")
         
-        # Carregar dados de rankings (opcional)
         df_rankings = None
-        if Path(RANKINGS_CSV_PATH).exists():
+        if RANKINGS_CSV_PATH.exists():
             logger.info(f"Carregando rankings de: {RANKINGS_CSV_PATH}")
             df_rankings = pd.read_csv(RANKINGS_CSV_PATH)
             logger.info(f"Rankings carregados: {len(df_rankings)} registros")
         else:
             logger.warning(f"Arquivo de rankings não encontrado: {RANKINGS_CSV_PATH}")
-            logger.info("Continuando análise sem dados de ranking")
         
-        # Inicializar analisador
-        analyzer = MultiLeagueAnalyzer(alpha=ALPHA, num_simulations=NUM_SIMULATIONS,
-                                       current_season_weight=CURRENT_SEASON_WEIGHT)
+        # Garantir que o diretório de saída existe
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         
-        # Executar análises
+        # Usar analisador otimizado
+        analyzer = MultiLeagueAnalyzer(
+            alpha=ALPHA, 
+            num_simulations=NUM_SIMULATIONS,
+            current_season_weight=CURRENT_SEASON_WEIGHT,
+            max_workers=MAX_WORKERS,
+            processing_mode=PROCESSING_MODE,
+            use_dynamic_strengths=USE_DYNAMIC_STRENGTHS
+        )
+        
         results = analyzer.analyze_all_leagues(
             df_jogos=df_jogos,
             df_rankings=df_rankings,
             output_dir=OUTPUT_DIR,
-            save_plots=True
+            save_plots=False,
+            save_round_data=True,
+            batch_size=BATCH_SIZE,
+            resume=True
         )
         
-        # Gerar relatório resumo
+        # Gerar relatório
         logger.info("\n" + "="*60)
         logger.info("GERANDO RELATÓRIO RESUMO")
         logger.info("="*60)
         
         summary_df = analyzer.generate_summary_report(
-            save_path=Path(OUTPUT_DIR) / 'summary_report_enhanced.csv'
+            save_path=OUTPUT_DIR / 'optimized_summary_report.csv'
         )
         
-        print("\n" + "="*100)
-        print("RESUMO FINAL DE TODAS AS ANÁLISES")
-        print("="*100)
-        print(summary_df.to_string(index=False))
-        
-        # Estatísticas gerais melhoradas
+        # Estatísticas
         total_leagues = len(results)
         competitive_leagues = sum(1 for r in results if r.is_competitive)
         with_rankings = sum(1 for r in results if r.has_ranking_data)
+        dynamic_strengths = sum(1 for r in results if r.strength_calculation_method == "dynamic")
         
         print(f"\n{'='*60}")
-        print("ESTATÍSTICAS GERAIS:")
+        print("ESTATÍSTICAS GERAIS (OTIMIZADO):")
         print(f"{'='*60}")
         print(f"Total de campeonatos analisados: {total_leagues}")
         print(f"Campeonatos com dados de ranking: {with_rankings} ({with_rankings/total_leagues:.1%})")
+        print(f"Campeonatos com forças dinâmicas: {dynamic_strengths} ({dynamic_strengths/total_leagues:.1%})")
         print(f"Campeonatos competitivos: {competitive_leagues} ({competitive_leagues/total_leagues:.1%})")
         print(f"Campeonatos não competitivos: {total_leagues-competitive_leagues} ({(total_leagues-competitive_leagues)/total_leagues:.1%})")
-        
+        print(f"Modo de processamento: {PROCESSING_MODE}")
+        print(f"Núcleos utilizados: {MAX_WORKERS}")
+
         if total_leagues - competitive_leagues > 0:
-            avg_turning_point = np.mean([r.turning_point_percent for r in results if r.turning_point_percent is not None])
-            print(f"Ponto de virada médio: {avg_turning_point:.1%} da temporada")
+            turning_points = [r.turning_point_percent for r in results if r.turning_point_percent is not None]
+            if turning_points:
+                avg_turning_point = np.mean(turning_points)
+                print(f"Ponto de virada médio: {avg_turning_point:.1%} da temporada")
         
-        # Gerar visualizações comparativas
-        logger.info("Gerando análise comparativa...")
-        analyzer.plot_comparative_analysis(
-            save_path=Path(OUTPUT_DIR) / 'comparative_analysis_enhanced.png'
-        )
-        
-        logger.info(f"\nTodos os resultados salvos em: {OUTPUT_DIR}/")
-        logger.info("Análise concluída com sucesso!")
+        logger.info("Análise otimizada concluída com sucesso!")
         
     except FileNotFoundError as e:
         logger.error(f"Arquivo não encontrado: {e}")
@@ -1580,4 +1889,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Usar a versão otimizada
+    main_optimized()
