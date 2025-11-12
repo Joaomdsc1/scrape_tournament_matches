@@ -1799,7 +1799,7 @@ def main_optimized():
         
         # Parâmetros de performance
         ALPHA = 0.05
-        NUM_SIMULATIONS = 300
+        NUM_SIMULATIONS = 500
         CURRENT_SEASON_WEIGHT = 0.5
         PROCESSING_MODE = "parallel"
         BATCH_SIZE = 10
