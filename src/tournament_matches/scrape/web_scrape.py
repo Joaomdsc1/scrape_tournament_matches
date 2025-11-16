@@ -1,4 +1,5 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from pathlib import Path
 from typing import Optional
@@ -48,10 +49,10 @@ def _rename_columns_all_sports(
 def _web_scrape_from_paths(
     paths: list[str], first_season: tuple[str, str], last_season: tuple[str, str]
 ) -> dict[str, pd.DataFrame]:
-    sport_to_matches: dict[str, pd.DataFrame] = defaultdict(pd.DataFrame)
+    season_jobs: list[tuple[str, str, str, str]] = []
+    league_season_totals: dict[str, int] = {}
 
     for path in paths:  # path: /sport/country/current_name/
-        # name is necessary because some tournaments had their names changed
         name: str = get_tournament_name(path)
         sport: str = get_sport(path)
 
@@ -59,17 +60,70 @@ def _web_scrape_from_paths(
             path, first_season, last_season
         )
 
-        for season_path in season_paths:  # season_path: /sport/country/name-year/
-            # id for data_frame: f"{current_name}@{season_path}"
-            id: str = _create_tournament_id(name, season_path)
+        if not season_paths:
+            logging.warning("Nenhuma temporada encontrada para %s", path)
+            continue
 
-            matches: Optional[Matches] = web_scrape_matches_information(season_path)
+        league_season_totals[path] = len(season_paths)
+        logging.info(
+            "Iniciando extração da liga %s (%d temporadas)", path, len(season_paths)
+        )
+
+        for season_path in season_paths:  # season_path: /sport/country/name-year/
+            season_jobs.append((sport, name, path, season_path))
+
+    sport_to_frames: dict[str, list[pd.DataFrame]] = defaultdict(list)
+
+    if not season_jobs:
+        return {}
+
+    max_workers = min(8, len(season_jobs))
+    logging.info("Starting parallel scrape for %d seasons with %d workers.", len(season_jobs), max_workers)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_meta = {
+            executor.submit(web_scrape_matches_information, season_path): (
+                sport,
+                _create_tournament_id(name, season_path),
+                season_path,
+                base_path,
+            )
+            for sport, name, base_path, season_path in season_jobs
+        }
+
+        league_completed: dict[str, int] = defaultdict(int)
+
+        for future in as_completed(future_to_meta):
+            sport, season_id, season_path, base_path = future_to_meta[future]
+
+            try:
+                matches: Optional[Matches] = future.result()
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logging.error("Erro ao extrair %s: %s", season_path, exc)
+                matches = None
 
             if not matches:
-                continue
+                logging.debug("Nenhuma partida retornada para %s", season_path)
+            else:
+                df_matches: pd.DataFrame = _convert_matches_list_to_data_frame(
+                    season_id, matches
+                )
+                sport_to_frames[sport].append(df_matches)
 
-            df_matches: pd.DataFrame = _convert_matches_list_to_data_frame(id, matches)
-            sport_to_matches[sport] = pd.concat([sport_to_matches[sport], df_matches])
+            league_completed[base_path] += 1
+            if league_completed[base_path] == league_season_totals.get(base_path, 0):
+                logging.info(
+                    "Concluída a extração da liga %s (%d temporadas processadas)",
+                    base_path,
+                    league_completed[base_path],
+                )
+
+    sport_to_matches: dict[str, pd.DataFrame] = {}
+    for sport, frames in sport_to_frames.items():
+        if not frames:
+            continue
+        combined = pd.concat(frames)
+        sport_to_matches[sport] = combined
 
     stm_right_columns: dict[str, pd.DataFrame] = _rename_columns_all_sports(
         sport_to_matches

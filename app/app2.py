@@ -385,46 +385,187 @@ def exibir_pagina_visao_geral(dados_competitividade, estatisticas_gerais):
             help="Chance média de empate"
         )
     
-    # CORREÇÃO: Top ligas competitivas e não competitivas com país extraído do ID
+    # Tabelas de campeonatos mais e menos competitivos
     st.markdown("---")
+    
+    # Função auxiliar para calcular porcentagem do ponto de virada
+    def calcular_porcentagem_ponto_virada(row):
+        """Calcula a porcentagem da temporada em que ocorreu o ponto de virada"""
+        try:
+            ponto_virada = row.get('Ponto Virada (%)', None)
+            if pd.notna(ponto_virada) and ponto_virada != 'N/A':
+                # Se já está em formato de porcentagem (string com %)
+                if isinstance(ponto_virada, str) and '%' in str(ponto_virada):
+                    return float(str(ponto_virada).rstrip('%'))
+                # Se é numérico, assumir que já é porcentagem
+                return float(ponto_virada)
+            return None
+        except:
+            return None
+    
+    # Função auxiliar para extrair liga base do ID
+    def extrair_liga_base_do_id(id_campeonato):
+        """Extrai o nome base da liga (sem temporada) do ID"""
+        try:
+            # Usar a coluna 'Liga' diretamente se disponível, ou extrair do ID
+            if 'Liga' in dados_competitividade.columns:
+                match = dados_competitividade[dados_competitividade['ID Campeonato'] == id_campeonato]
+                if not match.empty:
+                    liga_completa = match.iloc[0].get('Liga', 'N/A')
+                    # Remover temporada se presente (formato: "Nome Liga - 2015/2016")
+                    if ' - ' in str(liga_completa):
+                        return liga_completa.split(' - ')[0]
+                    return liga_completa
+            # Fallback: extrair do ID usando regex
+            if '@' in str(id_campeonato):
+                url_part = str(id_campeonato).split('@')[1] if '@' in str(id_campeonato) else ''
+                partes_url = url_part.split('/')
+                if len(partes_url) >= 4 and partes_url[3]:
+                    liga_completa = partes_url[3]
+                    # Remover anos no final (formato: -2015-2016 ou -2015)
+                    liga_base = re.sub(r'(-\d{4})+$', '', liga_completa)
+                    return liga_base.replace('-', ' ').title()
+            return 'N/A'
+        except Exception as e:
+            logger.error(f"Erro ao extrair liga base de {id_campeonato}: {e}")
+            return 'N/A'
+    
+    # Organizar em duas colunas
     col1, col2 = st.columns(2)
     
+    # TABELA 1: 5 Campeonatos Mais Competitivos (individuais)
     with col1:
-        st.subheader("🏆 Ligas Mais Competitivas")
-        ligas_competitivas = dados_competitividade[dados_competitividade['É Competitivo'] == 'Sim']
+        st.subheader("🏆 Top 5 Campeonatos Mais Competitivos")
+        ligas_competitivas = dados_competitividade[dados_competitividade['É Competitivo'] == 'Sim'].copy()
+        
         if not ligas_competitivas.empty:
             # Ordenar por menor desequilíbrio (mais competitivas)
             top_competitivas = ligas_competitivas.nsmallest(5, 'Desequilíbrio Final')
             
-            for idx, (_, liga) in enumerate(top_competitivas.iterrows(), 1):
+            # Preparar dados para a tabela
+            dados_tabela_mais_comp_ind = []
+            for _, liga in top_competitivas.iterrows():
                 pais = liga.get('País', 'N/A')
                 
-                st.write(f"{idx}. **{liga['Liga']}**")
-                st.write(f"   🌍 {pais} - {liga['Temporada']}")
-                st.write(f"   📊 Desequilíbrio: {liga['Desequilíbrio Final']:.4f}")
+                dados_tabela_mais_comp_ind.append({
+                    'Liga': liga.get('Liga', 'N/A'),
+                    'Temporada': liga.get('Temporada', 'N/A'),
+                    'País': pais,
+                    'Desequilíbrio Final': f"{liga['Desequilíbrio Final']:.4f}" if pd.notna(liga['Desequilíbrio Final']) else 'N/A'
+                })
+            
+            df_mais_comp_ind = pd.DataFrame(dados_tabela_mais_comp_ind)
+            st.dataframe(df_mais_comp_ind, hide_index=True, use_container_width=True)
         else:
-            st.info("Nenhuma liga competitiva encontrada")
+            st.info("Nenhum campeonato competitivo encontrado")
     
+    # TABELA 2: 5 Campeonatos Menos Competitivos (individuais)
     with col2:
-        st.subheader("📉 Ligas Menos Competitivas")
-        ligas_nao_competitivas = dados_competitividade[dados_competitividade['É Competitivo'] == 'Não']
+        st.subheader("📉 Top 5 Campeonatos Menos Competitivos")
+        ligas_nao_competitivas = dados_competitividade[dados_competitividade['É Competitivo'] == 'Não'].copy()
+        
         if not ligas_nao_competitivas.empty:
             # Ordenar por maior desequilíbrio (menos competitivas)
             top_nao_competitivas = ligas_nao_competitivas.nlargest(5, 'Desequilíbrio Final')
             
-            for idx, (_, liga) in enumerate(top_nao_competitivas.iterrows(), 1):
+            # Preparar dados para a tabela
+            dados_tabela_menos_comp_ind = []
+            for _, liga in top_nao_competitivas.iterrows():
                 pais = liga.get('País', 'N/A')
-                ponto_virada = liga.get('Ponto Virada (%)', 'N/A')
+                ponto_virada_pct = calcular_porcentagem_ponto_virada(liga)
                 
-                st.write(f"{idx}. **{liga['Liga']}**")
-                st.write(f"   🌍 {pais} - {liga['Temporada']}")
-                st.write(f"   📊 Desequilíbrio: {liga['Desequilíbrio Final']:.4f}")
-                
-                # Exibir ponto de virada se disponível
-                if ponto_virada != 'N/A' and not pd.isna(ponto_virada):
-                    st.write(f"   ⏰ Ponto de virada: {ponto_virada}")
+                dados_tabela_menos_comp_ind.append({
+                    'Liga': liga.get('Liga', 'N/A'),
+                    'Temporada': liga.get('Temporada', 'N/A'),
+                    'País': pais,
+                    'Desequilíbrio Final': f"{liga['Desequilíbrio Final']:.4f}" if pd.notna(liga['Desequilíbrio Final']) else 'N/A',
+                    'Ponto de Virada (%)': f"{ponto_virada_pct:.1f}%" if ponto_virada_pct is not None else 'N/A'
+                })
+            
+            df_menos_comp_ind = pd.DataFrame(dados_tabela_menos_comp_ind)
+            st.dataframe(df_menos_comp_ind, hide_index=True, use_container_width=True)
         else:
-            st.info("Nenhuma liga não competitiva encontrada")
+            st.info("Nenhum campeonato não competitivo encontrado")
+    
+    st.markdown("---")
+    
+    # TABELA ÚNICA: Todas as Ligas Agrupadas (da mais competitiva para a menos competitiva)
+    st.subheader("📊 Ranking de Ligas por Competitividade")
+    st.info("Ligas agrupadas e ordenadas da mais competitiva (menor desequilíbrio) para a menos competitiva (maior desequilíbrio)")
+    
+    # Combinar todas as ligas (competitivas e não competitivas)
+    todas_ligas_agrup = dados_competitividade.copy()
+    
+    if not todas_ligas_agrup.empty:
+        # Adicionar coluna de liga base para agrupamento
+        todas_ligas_agrup['Liga Base'] = todas_ligas_agrup['ID Campeonato'].apply(extrair_liga_base_do_id)
+        
+        # Agrupar por liga base e país
+        todas_ligas_agrup['Chave Agrupamento'] = todas_ligas_agrup.apply(
+            lambda row: f"{row.get('País', 'N/A')}|||{row['Liga Base']}", axis=1
+        )
+        
+        # Calcular médias por liga
+        dados_tabela_todas_ligas = []
+        for chave, grupo in todas_ligas_agrup.groupby('Chave Agrupamento'):
+            pais = grupo.iloc[0].get('País', 'N/A')
+            liga_nome = grupo.iloc[0]['Liga Base']
+            
+            # Calcular médias
+            media_desequilibrio = grupo['Desequilíbrio Final'].mean()
+            
+            # Calcular porcentagem média do ponto de virada
+            pontos_virada = []
+            for _, row in grupo.iterrows():
+                pct = calcular_porcentagem_ponto_virada(row)
+                if pct is not None:
+                    pontos_virada.append(pct)
+            
+            media_ponto_virada = sum(pontos_virada) / len(pontos_virada) if pontos_virada else None
+            
+            # Calcular estatísticas de competitividade
+            total_temporadas = len(grupo)
+            temporadas_competitivas = len(grupo[grupo['É Competitivo'] == 'Sim'])
+            porcentagem_competitivas = (temporadas_competitivas / total_temporadas * 100) if total_temporadas > 0 else 0
+            
+            dados_tabela_todas_ligas.append({
+                'Liga': liga_nome,
+                'País': pais,
+                'Média Desequilíbrio Final': media_desequilibrio,
+                'Média Ponto de Virada (%)': media_ponto_virada,
+                'Total Temporadas': total_temporadas,
+                'Temporadas Competitivas': temporadas_competitivas,
+                '% Competitivas': porcentagem_competitivas,
+                '_desequilibrio_num': media_desequilibrio
+            })
+        
+        # Ordenar por menor desequilíbrio (mais competitivas primeiro)
+        if dados_tabela_todas_ligas:
+            dados_tabela_ordenados = sorted(
+                dados_tabela_todas_ligas, 
+                key=lambda x: x['_desequilibrio_num']
+            )
+            
+            # Formatar para exibição com ranking
+            dados_formatados = []
+            for idx, item in enumerate(dados_tabela_ordenados, 1):
+                dados_formatados.append({
+                    'Ranking': idx,
+                    'Liga': item['Liga'],
+                    'País': item['País'],
+                    'Total Temporadas': item['Total Temporadas'],
+                    'Temporadas Competitivas': item['Temporadas Competitivas'],
+                    '% Competitivas': f"{item['% Competitivas']:.1f}%",
+                    'Média Desequilíbrio Final': f"{item['Média Desequilíbrio Final']:.4f}",
+                    'Média Ponto de Virada (%)': f"{item['Média Ponto de Virada (%)']:.1f}%" if item['Média Ponto de Virada (%)'] is not None else 'N/A'
+                })
+            
+            df_todas_ligas = pd.DataFrame(dados_formatados)
+            st.dataframe(df_todas_ligas, hide_index=True, use_container_width=True)
+        else:
+            st.info("Nenhuma liga encontrada para agrupamento")
+    else:
+        st.info("Nenhuma liga encontrada")
 
 # ===== FUNÇÃO DE COMPARAÇÃO CORRIGIDA =====
 
@@ -513,6 +654,8 @@ def comparar_ligas(liga1_info, liga1_dados, liga2_info, liga2_dados, dados_compe
         st.subheader("📈 Comparação de Competitividade")
         
         if not info_liga1.empty and not info_liga2.empty:
+            medias_outras_temporadas1 = calcular_medias_outras_temporadas(dados_competitividade, liga1_info['id'])
+            medias_outras_temporadas2 = calcular_medias_outras_temporadas(dados_competitividade, liga2_info['id'])
             # Dados para gráfico de radar
             categorias = ['Variância Forças', 'Desequilíbrio Final', 'P(Casa)', 'P(Empate)', 'P(Fora)']
             
@@ -683,28 +826,122 @@ def comparar_ligas(liga1_info, liga1_dados, liga2_info, liga2_dados, dados_compe
                 st.metric(
                     "Desequilíbrio Final", 
                     f"{liga1_final['Desequilíbrio Final']:.4f}",
-                    delta=f"{liga1_final['Desequilíbrio Final'] - estatisticas_gerais['desequilibrio_final_media']:.4f}",
-                    delta_color="inverse", # Menor é melhor
-                    help=f"Média de todas as ligas: {estatisticas_gerais['desequilibrio_final_media']:.4f}. Valores negativos indicam maior competitividade que a média."
+                    help=f"Média de todas as ligas: {estatisticas_gerais['desequilibrio_final_media']:.4f}. Valores menores indicam maior competitividade."
                 )
+                delta_geral = liga1_final['Desequilíbrio Final'] - estatisticas_gerais['desequilibrio_final_media']
+                bloco_geral = gerar_bloco_comparacao(
+                    "Média geral",
+                    estatisticas_gerais['desequilibrio_final_media'],
+                    delta_geral,
+                    melhor_quando="menor"
+                )
+                if bloco_geral:
+                    st.markdown(bloco_geral, unsafe_allow_html=True)
+                if medias_outras_temporadas1 and pd.notna(medias_outras_temporadas1.get('desequilibrio_final_media')):
+                    delta_liga = liga1_final['Desequilíbrio Final'] - medias_outras_temporadas1['desequilibrio_final_media']
+                    bloco_liga = gerar_bloco_comparacao(
+                        "Média outras temporadas",
+                        medias_outras_temporadas1['desequilibrio_final_media'],
+                        delta_liga,
+                        melhor_quando="menor"
+                    )
+                    if bloco_liga:
+                        st.markdown(bloco_liga, unsafe_allow_html=True)
+                else:
+                    st.caption("Sem histórico suficiente para comparação interna.")
+
                 st.metric(
                     "P(Casa)", 
                     f"{liga1_final['P(Casa)']:.3f}",
-                    delta=f"{liga1_final['P(Casa)'] - estatisticas_gerais['p_casa_media']:.3f}",
                     help=f"Média de todas as ligas: {estatisticas_gerais['p_casa_media']:.3f}"
                 )
+                delta_geral = liga1_final['P(Casa)'] - estatisticas_gerais['p_casa_media']
+                bloco_geral = gerar_bloco_comparacao(
+                    "Média geral",
+                    estatisticas_gerais['p_casa_media'],
+                    delta_geral,
+                    formato_valor="{:.3f}",
+                    formato_delta="{:+.3f}",
+                    melhor_quando="menor"
+                )
+                if bloco_geral:
+                    st.markdown(bloco_geral, unsafe_allow_html=True)
+                if medias_outras_temporadas1 and pd.notna(medias_outras_temporadas1.get('p_casa_media')):
+                    delta_liga = liga1_final['P(Casa)'] - medias_outras_temporadas1['p_casa_media']
+                    bloco_liga = gerar_bloco_comparacao(
+                        "Média outras temporadas",
+                        medias_outras_temporadas1['p_casa_media'],
+                        delta_liga,
+                        formato_valor="{:.3f}",
+                        formato_delta="{:+.3f}",
+                        melhor_quando="menor"
+                    )
+                    if bloco_liga:
+                        st.markdown(bloco_liga, unsafe_allow_html=True)
+                else:
+                    st.caption("Sem histórico suficiente para comparação interna.")
+
                 st.metric(
                     "P(Empate)", 
                     f"{liga1_final['P(Empate)']:.3f}",
-                    delta=f"{liga1_final['P(Empate)'] - estatisticas_gerais['p_empate_media']:.3f}",
                     help=f"Média de todas as ligas: {estatisticas_gerais['p_empate_media']:.3f}"
                 )
+                delta_geral = liga1_final['P(Empate)'] - estatisticas_gerais['p_empate_media']
+                bloco_geral = gerar_bloco_comparacao(
+                    "Média geral",
+                    estatisticas_gerais['p_empate_media'],
+                    delta_geral,
+                    formato_valor="{:.3f}",
+                    formato_delta="{:+.3f}",
+                    melhor_quando="menor"
+                )
+                if bloco_geral:
+                    st.markdown(bloco_geral, unsafe_allow_html=True)
+                if medias_outras_temporadas1 and pd.notna(medias_outras_temporadas1.get('p_empate_media')):
+                    delta_liga = liga1_final['P(Empate)'] - medias_outras_temporadas1['p_empate_media']
+                    bloco_liga = gerar_bloco_comparacao(
+                        "Média outras temporadas",
+                        medias_outras_temporadas1['p_empate_media'],
+                        delta_liga,
+                        formato_valor="{:.3f}",
+                        formato_delta="{:+.3f}",
+                        melhor_quando="menor"
+                    )
+                    if bloco_liga:
+                        st.markdown(bloco_liga, unsafe_allow_html=True)
+                else:
+                    st.caption("Sem histórico suficiente para comparação interna.")
+
                 st.metric(
                     "P(Fora)", 
                     f"{liga1_final['P(Fora)']:.3f}",
-                    delta=f"{liga1_final['P(Fora)'] - estatisticas_gerais['p_fora_media']:.3f}",
                     help=f"Média de todas as ligas: {estatisticas_gerais['p_fora_media']:.3f}"
                 )
+                delta_geral = liga1_final['P(Fora)'] - estatisticas_gerais['p_fora_media']
+                bloco_geral = gerar_bloco_comparacao(
+                    "Média geral",
+                    estatisticas_gerais['p_fora_media'],
+                    delta_geral,
+                    formato_valor="{:.3f}",
+                    formato_delta="{:+.3f}",
+                    melhor_quando="menor"
+                )
+                if bloco_geral:
+                    st.markdown(bloco_geral, unsafe_allow_html=True)
+                if medias_outras_temporadas1 and pd.notna(medias_outras_temporadas1.get('p_fora_media')):
+                    delta_liga = liga1_final['P(Fora)'] - medias_outras_temporadas1['p_fora_media']
+                    bloco_liga = gerar_bloco_comparacao(
+                        "Média outras temporadas",
+                        medias_outras_temporadas1['p_fora_media'],
+                        delta_liga,
+                        formato_valor="{:.3f}",
+                        formato_delta="{:+.3f}",
+                        melhor_quando="menor"
+                    )
+                    if bloco_liga:
+                        st.markdown(bloco_liga, unsafe_allow_html=True)
+                else:
+                    st.caption("Sem histórico suficiente para comparação interna.")
             
             with col2:
                 st.subheader(f"🏆 {liga2_info['nome']}")
@@ -715,28 +952,122 @@ def comparar_ligas(liga1_info, liga1_dados, liga2_info, liga2_dados, dados_compe
                 st.metric(
                     "Desequilíbrio Final", 
                     f"{liga2_final['Desequilíbrio Final']:.4f}",
-                    delta=f"{liga2_final['Desequilíbrio Final'] - estatisticas_gerais['desequilibrio_final_media']:.4f}",
-                    delta_color="inverse", # Menor é melhor
-                    help=f"Média de todas as ligas: {estatisticas_gerais['desequilibrio_final_media']:.4f}. Valores negativos indicam maior competitividade que a média."
+                    help=f"Média de todas as ligas: {estatisticas_gerais['desequilibrio_final_media']:.4f}. Valores menores indicam maior competitividade."
                 )
+                delta_geral = liga2_final['Desequilíbrio Final'] - estatisticas_gerais['desequilibrio_final_media']
+                bloco_geral = gerar_bloco_comparacao(
+                    "Média geral",
+                    estatisticas_gerais['desequilibrio_final_media'],
+                    delta_geral,
+                    melhor_quando="menor"
+                )
+                if bloco_geral:
+                    st.markdown(bloco_geral, unsafe_allow_html=True)
+                if medias_outras_temporadas2 and pd.notna(medias_outras_temporadas2.get('desequilibrio_final_media')):
+                    delta_liga = liga2_final['Desequilíbrio Final'] - medias_outras_temporadas2['desequilibrio_final_media']
+                    bloco_liga = gerar_bloco_comparacao(
+                        "Média outras temporadas",
+                        medias_outras_temporadas2['desequilibrio_final_media'],
+                        delta_liga,
+                        melhor_quando="menor"
+                    )
+                    if bloco_liga:
+                        st.markdown(bloco_liga, unsafe_allow_html=True)
+                else:
+                    st.caption("Sem histórico suficiente para comparação interna.")
+
                 st.metric(
                     "P(Casa)", 
                     f"{liga2_final['P(Casa)']:.3f}",
-                    delta=f"{liga2_final['P(Casa)'] - estatisticas_gerais['p_casa_media']:.3f}",
                     help=f"Média de todas as ligas: {estatisticas_gerais['p_casa_media']:.3f}"
                 )
+                delta_geral = liga2_final['P(Casa)'] - estatisticas_gerais['p_casa_media']
+                bloco_geral = gerar_bloco_comparacao(
+                    "Média geral",
+                    estatisticas_gerais['p_casa_media'],
+                    delta_geral,
+                    formato_valor="{:.3f}",
+                    formato_delta="{:+.3f}",
+                    melhor_quando="menor"
+                )
+                if bloco_geral:
+                    st.markdown(bloco_geral, unsafe_allow_html=True)
+                if medias_outras_temporadas2 and pd.notna(medias_outras_temporadas2.get('p_casa_media')):
+                    delta_liga = liga2_final['P(Casa)'] - medias_outras_temporadas2['p_casa_media']
+                    bloco_liga = gerar_bloco_comparacao(
+                        "Média outras temporadas",
+                        medias_outras_temporadas2['p_casa_media'],
+                        delta_liga,
+                        formato_valor="{:.3f}",
+                        formato_delta="{:+.3f}",
+                        melhor_quando="menor"
+                    )
+                    if bloco_liga:
+                        st.markdown(bloco_liga, unsafe_allow_html=True)
+                else:
+                    st.caption("Sem histórico suficiente para comparação interna.")
+
                 st.metric(
                     "P(Empate)", 
                     f"{liga2_final['P(Empate)']:.3f}",
-                    delta=f"{liga2_final['P(Empate)'] - estatisticas_gerais['p_empate_media']:.3f}",
                     help=f"Média de todas as ligas: {estatisticas_gerais['p_empate_media']:.3f}"
                 )
+                delta_geral = liga2_final['P(Empate)'] - estatisticas_gerais['p_empate_media']
+                bloco_geral = gerar_bloco_comparacao(
+                    "Média geral",
+                    estatisticas_gerais['p_empate_media'],
+                    delta_geral,
+                    formato_valor="{:.3f}",
+                    formato_delta="{:+.3f}",
+                    melhor_quando="menor"
+                )
+                if bloco_geral:
+                    st.markdown(bloco_geral, unsafe_allow_html=True)
+                if medias_outras_temporadas2 and pd.notna(medias_outras_temporadas2.get('p_empate_media')):
+                    delta_liga = liga2_final['P(Empate)'] - medias_outras_temporadas2['p_empate_media']
+                    bloco_liga = gerar_bloco_comparacao(
+                        "Média outras temporadas",
+                        medias_outras_temporadas2['p_empate_media'],
+                        delta_liga,
+                        formato_valor="{:.3f}",
+                        formato_delta="{:+.3f}",
+                        melhor_quando="menor"
+                    )
+                    if bloco_liga:
+                        st.markdown(bloco_liga, unsafe_allow_html=True)
+                else:
+                    st.caption("Sem histórico suficiente para comparação interna.")
+
                 st.metric(
                     "P(Fora)", 
                     f"{liga2_final['P(Fora)']:.3f}",
-                    delta=f"{liga2_final['P(Fora)'] - estatisticas_gerais['p_fora_media']:.3f}",
                     help=f"Média de todas as ligas: {estatisticas_gerais['p_fora_media']:.3f}"
                 )
+                delta_geral = liga2_final['P(Fora)'] - estatisticas_gerais['p_fora_media']
+                bloco_geral = gerar_bloco_comparacao(
+                    "Média geral",
+                    estatisticas_gerais['p_fora_media'],
+                    delta_geral,
+                    formato_valor="{:.3f}",
+                    formato_delta="{:+.3f}",
+                    melhor_quando="menor"
+                )
+                if bloco_geral:
+                    st.markdown(bloco_geral, unsafe_allow_html=True)
+                if medias_outras_temporadas2 and pd.notna(medias_outras_temporadas2.get('p_fora_media')):
+                    delta_liga = liga2_final['P(Fora)'] - medias_outras_temporadas2['p_fora_media']
+                    bloco_liga = gerar_bloco_comparacao(
+                        "Média outras temporadas",
+                        medias_outras_temporadas2['p_fora_media'],
+                        delta_liga,
+                        formato_valor="{:.3f}",
+                        formato_delta="{:+.3f}",
+                        melhor_quando="menor"
+                    )
+                    if bloco_liga:
+                        st.markdown(bloco_liga, unsafe_allow_html=True)
+                else:
+                    st.caption("Sem histórico suficiente para comparação interna.")
             # =========================================================
             # FIM DA CORREÇÃO
             # =========================================================
@@ -911,10 +1242,11 @@ def exibir_visao_individual(liga_selecionada, temporada_selecionada, id_selecion
         # CORREÇÃO: Adicionando P(Vitória Visitante) com comparativo
         # =========================================================
         st.subheader("Métricas Finais da Temporada (vs. Média Geral)")
-        st.info("As métricas abaixo referem-se ao resultado final da temporada e são comparadas com a média de todos os campeonatos analisados.")
+        st.info("As métricas abaixo referem-se ao resultado final da temporada e são comparadas com a média geral e com a média das demais temporadas deste campeonato.")
         
         if not info_campeonato.empty and estatisticas_gerais is not None:
             liga_final = info_campeonato.iloc[0]
+            medias_outras_temporadas = calcular_medias_outras_temporadas(dados_competitividade, id_selecionado)
             
             # Usar 4 colunas para incluir P(Vitória Visitante)
             col1, col2, col3, col4 = st.columns(4)
@@ -923,31 +1255,119 @@ def exibir_visao_individual(liga_selecionada, temporada_selecionada, id_selecion
                 st.metric(
                     "Desequilíbrio Final", 
                     f"{liga_final['Desequilíbrio Final']:.4f}",
-                    delta=f"{liga_final['Desequilíbrio Final'] - estatisticas_gerais['desequilibrio_final_media']:.4f}",
-                    delta_color="inverse", # Menor é melhor
-                    help=f"Média de todas as ligas: {estatisticas_gerais['desequilibrio_final_media']:.4f}. Negativo indica mais competitivo que a média."
+                    help="Diferença entre a liga e as referências gerais e históricas."
                 )
+                delta_geral = liga_final['Desequilíbrio Final'] - estatisticas_gerais['desequilibrio_final_media']
+                bloco_geral = gerar_bloco_comparacao(
+                    "Média geral",
+                    estatisticas_gerais['desequilibrio_final_media'],
+                    delta_geral,
+                    melhor_quando="menor"
+                )
+                if bloco_geral:
+                    st.markdown(bloco_geral, unsafe_allow_html=True)
+                if medias_outras_temporadas and pd.notna(medias_outras_temporadas.get('desequilibrio_final_media')):
+                    delta_liga = liga_final['Desequilíbrio Final'] - medias_outras_temporadas['desequilibrio_final_media']
+                    bloco_outras = gerar_bloco_comparacao(
+                        "Média outras temporadas",
+                        medias_outras_temporadas['desequilibrio_final_media'],
+                        delta_liga,
+                        melhor_quando="menor"
+                    )
+                    if bloco_outras:
+                        st.markdown(bloco_outras, unsafe_allow_html=True)
+                else:
+                    st.caption("Sem histórico suficiente para comparação interna.")
             with col2:
                 st.metric(
                     "P(Vitória Mandante)", 
-                    f"{liga_final['P(Casa)']:.3f}",
-                    delta=f"{liga_final['P(Casa)'] - estatisticas_gerais['p_casa_media']:.3f}",
-                    help=f"Média de todas as ligas: {estatisticas_gerais['p_casa_media']:.3f}"
+                    f"{liga_final['P(Casa)']:.3f}"
                 )
+                delta_geral = liga_final['P(Casa)'] - estatisticas_gerais['p_casa_media']
+                bloco_geral = gerar_bloco_comparacao(
+                    "Média geral",
+                    estatisticas_gerais['p_casa_media'],
+                    delta_geral,
+                    formato_valor="{:.3f}",
+                    formato_delta="{:+.3f}",
+                    melhor_quando="menor"
+                )
+                if bloco_geral:
+                    st.markdown(bloco_geral, unsafe_allow_html=True)
+                if medias_outras_temporadas and pd.notna(medias_outras_temporadas.get('p_casa_media')):
+                    delta_liga = liga_final['P(Casa)'] - medias_outras_temporadas['p_casa_media']
+                    bloco_outras = gerar_bloco_comparacao(
+                        "Média outras temporadas",
+                        medias_outras_temporadas['p_casa_media'],
+                        delta_liga,
+                        formato_valor="{:.3f}",
+                        formato_delta="{:+.3f}",
+                        melhor_quando="menor"
+                    )
+                    if bloco_outras:
+                        st.markdown(bloco_outras, unsafe_allow_html=True)
+                else:
+                    st.caption("Sem histórico suficiente para comparação interna.")
             with col3:
                 st.metric(
                     "P(Empate)", 
-                    f"{liga_final['P(Empate)']:.3f}",
-                    delta=f"{liga_final['P(Empate)'] - estatisticas_gerais['p_empate_media']:.3f}",
-                    help=f"Média de todas as ligas: {estatisticas_gerais['p_empate_media']:.3f}"
+                    f"{liga_final['P(Empate)']:.3f}"
                 )
+                delta_geral = liga_final['P(Empate)'] - estatisticas_gerais['p_empate_media']
+                bloco_geral = gerar_bloco_comparacao(
+                    "Média geral",
+                    estatisticas_gerais['p_empate_media'],
+                    delta_geral,
+                    formato_valor="{:.3f}",
+                    formato_delta="{:+.3f}",
+                    melhor_quando="menor"
+                )
+                if bloco_geral:
+                    st.markdown(bloco_geral, unsafe_allow_html=True)
+                if medias_outras_temporadas and pd.notna(medias_outras_temporadas.get('p_empate_media')):
+                    delta_liga = liga_final['P(Empate)'] - medias_outras_temporadas['p_empate_media']
+                    bloco_outras = gerar_bloco_comparacao(
+                        "Média outras temporadas",
+                        medias_outras_temporadas['p_empate_media'],
+                        delta_liga,
+                        formato_valor="{:.3f}",
+                        formato_delta="{:+.3f}",
+                        melhor_quando="menor"
+                    )
+                    if bloco_outras:
+                        st.markdown(bloco_outras, unsafe_allow_html=True)
+                else:
+                    st.caption("Sem histórico suficiente para comparação interna.")
             with col4:
                 st.metric(
                     "P(Vitória Visitante)", 
-                    f"{liga_final['P(Fora)']:.3f}",
-                    delta=f"{liga_final['P(Fora)'] - estatisticas_gerais['p_fora_media']:.3f}",
-                    help=f"Média de todas as ligas: {estatisticas_gerais['p_fora_media']:.3f}"
+                    f"{liga_final['P(Fora)']:.3f}"
                 )
+                delta_geral = liga_final['P(Fora)'] - estatisticas_gerais['p_fora_media']
+                bloco_geral = gerar_bloco_comparacao(
+                    "Média geral",
+                    estatisticas_gerais['p_fora_media'],
+                    delta_geral,
+                    formato_valor="{:.3f}",
+                    formato_delta="{:+.3f}",
+                    melhor_quando="menor"
+                )
+                if bloco_geral:
+                    st.markdown(bloco_geral, unsafe_allow_html=True)
+                if medias_outras_temporadas and pd.notna(medias_outras_temporadas.get('p_fora_media')):
+                    delta_liga = liga_final['P(Fora)'] - medias_outras_temporadas['p_fora_media']
+                    bloco_outras = gerar_bloco_comparacao(
+                        "Média outras temporadas",
+                        medias_outras_temporadas['p_fora_media'],
+                        delta_liga,
+                        formato_valor="{:.3f}",
+                        formato_delta="{:+.3f}",
+                        melhor_quando="menor"
+                    )
+                    if bloco_outras:
+                        st.markdown(bloco_outras, unsafe_allow_html=True)
+                else:
+                    st.caption("Sem histórico suficiente para comparação interna.")
         else:
             st.warning("⚠️ Métricas finais não disponíveis para comparação.")
 
@@ -1132,6 +1552,88 @@ def carregar_dados_rodadas_liga(championship_id: str):
     except Exception as e:
         st.error(f"❌ Erro ao carregar dados de rodada para {championship_id}: {e}")
         return None
+
+def calcular_medias_outras_temporadas(dados_competitividade: pd.DataFrame, championship_id: str):
+    """
+    Calcula a média das métricas de competitividade para outras temporadas do mesmo campeonato.
+    Retorna None caso não existam temporadas adicionais para comparação.
+    """
+    if dados_competitividade is None or dados_competitividade.empty or not championship_id:
+        return None
+    
+    try:
+        info_atual = extrair_info_campeonato(championship_id)
+        liga_base_atual = info_atual.get('liga_base') if info_atual else None
+        
+        if not liga_base_atual or liga_base_atual == 'N/A':
+            return None
+        
+        dados_aux = dados_competitividade.copy()
+        dados_aux['_liga_base'] = dados_aux['ID Campeonato'].apply(
+            lambda x: extrair_info_campeonato(x).get('liga_base', 'N/A')
+        )
+        
+        dados_mesma_liga = dados_aux[
+            (dados_aux['_liga_base'] == liga_base_atual) &
+            (dados_aux['ID Campeonato'] != championship_id)
+        ]
+        
+        if dados_mesma_liga.empty:
+            return None
+        
+        return {
+            'desequilibrio_final_media': dados_mesma_liga['Desequilíbrio Final'].mean(),
+            'p_casa_media': dados_mesma_liga['P(Casa)'].mean(),
+            'p_empate_media': dados_mesma_liga['P(Empate)'].mean(),
+            'p_fora_media': dados_mesma_liga['P(Fora)'].mean(),
+        }
+    except Exception as e:
+        logger.error(f"Erro ao calcular médias de outras temporadas para {championship_id}: {e}")
+        return None
+
+def gerar_bloco_comparacao(
+    rotulo: str,
+    valor_referencia,
+    delta,
+    formato_valor: str = "{:.4f}",
+    formato_delta: str = "{:+.4f}",
+    melhor_quando: str = "menor"
+):
+    """
+    Gera um bloco HTML colorido para destacar comparações de métricas.
+    
+    Parâmetros:
+        rotulo: identificação do valor de referência.
+        valor_referencia: valor numérico que servirá como comparação.
+        delta: diferença entre o valor atual e a referência (valor_atual - valor_referencia).
+        formato_valor: formato aplicado ao valor de referência.
+        formato_delta: formato aplicado ao delta.
+        melhor_quando: define a direção considerada melhor ("menor" ou "maior").
+    """
+    if (
+        valor_referencia is None or pd.isna(valor_referencia) or
+        delta is None or pd.isna(delta)
+    ):
+        return None
+    
+    if melhor_quando == "maior":
+        melhor = delta > 0
+    else:
+        melhor = delta < 0
+    
+    cor_fundo = "rgba(46, 204, 113, 0.22)" if melhor else "rgba(231, 76, 60, 0.18)"
+    cor_borda = "rgba(39, 174, 96, 0.5)" if melhor else "rgba(192, 57, 43, 0.45)"
+    
+    valor_fmt = formato_valor.format(valor_referencia)
+    delta_fmt = formato_delta.format(delta)
+    
+    return (
+        "<div style='background:{bg}; border-left:4px solid {border}; padding:0.45rem 0.75rem;"
+        " border-radius:0.45rem; margin-top:0.45rem; color:#fff;'>"
+        "<strong>{rotulo}:</strong> {valor} "
+        "<span style=\"color:#fff;\">({delta} vs temporada atual)</span>"
+        "</div>"
+    ).format(bg=cor_fundo, border=cor_borda, rotulo=rotulo, valor=valor_fmt, delta=delta_fmt)
 
 dados_esporte = carregar_dados_esporte(esporte)
 

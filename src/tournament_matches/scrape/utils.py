@@ -50,20 +50,26 @@ def get_tournament_name(path: str) -> str:
 
 def run_three_times(func: Callable[P, T]) -> Callable[P, T]:
     """
-    Decorator for trying to run a function more than once.
+    Decorator for trying to run a function more than once with shorter waits.
     """
 
+    max_attempts = 3
+    backoff_seconds = (1.5, 3.0)
+
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-        for _ in range(3):
+        for attempt in range(1, max_attempts + 1):
             result = func(*args, **kwargs)
 
             if result:  # if function's output is as expected
                 return result
 
-            time.sleep(random.uniform(6, 12))
+            if attempt < max_attempts:
+                delay = backoff_seconds[min(attempt - 1, len(backoff_seconds) - 1)]
+                jitter = random.uniform(0.0, 1.0)
+                time.sleep(delay + jitter)
 
         logging.warning("No results even after attempting three times.")
-        logging.warning(f"args: {args}\n" + f"kwargs: {kwargs}")
+        logging.warning("args: %s\nkwargs: %s", args, kwargs)
         return []
 
     wrapper.__name__ = func.__name__

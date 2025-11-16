@@ -5,12 +5,26 @@ import logging
 from datetime import datetime
 
 
-def scrape() -> None:
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+def _configure_logging() -> None:
+    """
+    Ajusta o logger raiz para também enviar mensagens ao terminal.
+    """
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
     )
+
+    # Evita adicionar múltiplos handlers ao rodar o script mais de uma vez
+    if not any(type(handler) is logging.StreamHandler for handler in root_logger.handlers):
+        root_logger.addHandler(console_handler)
+
+
+def scrape() -> None:
+    _configure_logging()
 
     params = config.parser.read_json_configuration("scrape.json")
 
